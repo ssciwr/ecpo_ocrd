@@ -26,7 +26,12 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
 ]
 dependencies = [
+    "click",
+    "ocrd",
 ]
+
+[project.scripts]
+ecpo_ocrd = "ecpo_ocrd.__main__:main"
 
 # The following section contains setuptools-specific configuration
 # options. For a full reference of available options, check the overview
