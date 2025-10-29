@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-* Python `==3.10` (others might work, but this is what we tests. Very recent versions do not work.)
+* Python `==3.10` (others might work, but this is what we tested. Very recent versions do not work.)
 
 ## Installation
 
@@ -17,7 +17,7 @@ ecpo_ocrd install
 
 ## Usage
 
-Before doing anything, at the `bin` folder to `PATH`:
+Before doing anything, add the `bin` folder to `PATH`:
 
 ```bash
 export PATH=$PWD/bin:$PATH
