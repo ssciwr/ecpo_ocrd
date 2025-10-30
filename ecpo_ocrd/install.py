@@ -20,28 +20,31 @@ def create_env(env_identifier):
 
 
 @functools.lru_cache()
-def install_package(package, envdir):
+def install_package(package, envdir, additional_packages=()):
     python_executable = envdir / "bin" / "python"
     subprocess.run(
-        [str(python_executable), "-m", "pip", "install", package],
+        [str(python_executable), "-m", "pip", "install", package]
+        + list(additional_packages),
         check=True,
         stdout=subprocess.DEVNULL,
     )
 
 
-def install_ocrd_tool(tool, package=None, env_identifier="core", models=[]):
+def install_ocrd_tool(
+    tool, package=None, env_identifier="core", models=[], additional_packages=[]
+):
     assert package is not None
 
     # Ensure existence of the environment
     env = create_env(env_identifier=env_identifier)
 
     # Ensure installation of the package
-    install_package(package, env)
+    install_package(package, env, tuple(additional_packages))
 
     # Download models (if any)
     for model in models:
         subprocess.run(
-            [str(env / "bin" / "ocrd"), "resmgr", "download", tool, model],
+            [str(env / "bin" / "ocrd"), "resmgr", "download", "-a", tool, model],
             check=True,
         )
 
@@ -68,7 +71,10 @@ def install(prefix):
     global _prefix
     _prefix = prefix
 
-    install_ocrd_tool("ocrd-segment-extract-regions", package="ocrd_segment")
+    install_ocrd_tool(
+        "ocrd-segment-extract-regions",
+        package="git+https://github.com/OCR-D/ocrd_segment.git@v0.2.2",
+    )
     install_ocrd_tool("ocrd-skimage-denoise-raw", package="ocrd_wrap")
     install_ocrd_tool("ocrd-skimage-normalize", package="ocrd_wrap")
     install_ocrd_tool(
@@ -76,6 +82,13 @@ def install(prefix):
     )
     install_ocrd_tool("ocrd-cis-ocropy-denoise", package="ocrd_cis")
     install_ocrd_tool("ocrd-cis-ocropy-deskew", package="ocrd_cis")
+    install_ocrd_tool("ocrd-pagetopdf", package="ocrd_pagetopdf")
+    install_ocrd_tool(
+        "ocrd-paddleocr-segment",
+        package="git+https://github.com/ssciwr/ocrd_paddleocr.git@main",
+        models=["*"],
+        additional_packages=["paddlepaddle==3.2.0"],
+    )
 
 
 def uninstall(prefix):
