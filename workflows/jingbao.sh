@@ -32,3 +32,7 @@ ocrd-cis-ocropy-deskew -I OCR-D-DENOISE -O OCR-D-DESKEW-PAGE -P level-of-operati
 # Step 7: Region segmentation
 # Note: Eynollah does not work for me here, as it does not download one of the required models.
 # ocrd-eynollah-segment -I OCR-D-DESKEW-PAGE -O OCR-D-SEG -P models default
+ocrd-paddleocr-segment -I OCR-D-IMG -O OCR-D-SEG -P threshold 40
+
+# Output visualization
+ocrd-pagetopdf -I OCR-D-SEG -O OCR-D-PDF -P outlines region
