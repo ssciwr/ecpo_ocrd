@@ -71,10 +71,7 @@ def install(prefix):
     global _prefix
     _prefix = prefix
 
-    install_ocrd_tool(
-        "ocrd-segment-extract-regions",
-        package="git+https://github.com/OCR-D/ocrd_segment.git@v0.2.2",
-    )
+    install_ocrd_tool("ocrd-segment-extract-regions", package="ocrd_segment")
     install_ocrd_tool("ocrd-skimage-denoise-raw", package="ocrd_wrap")
     install_ocrd_tool("ocrd-skimage-normalize", package="ocrd_wrap")
     install_ocrd_tool(
