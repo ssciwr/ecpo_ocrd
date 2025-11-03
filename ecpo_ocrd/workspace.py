@@ -4,6 +4,7 @@ import pathlib
 import random
 import shutil
 import subprocess
+import tqdm
 
 
 @contextlib.contextmanager
@@ -47,7 +48,7 @@ def create(workspace=None, sds=None, data=None, sample=None):
         subprocess.run(["ocrd", "workspace", "set-id", workspace_id], check=True)
 
         # Add the images to the workspace
-        for i, image in enumerate(images):
+        for i, image in tqdm.tqdm(enumerate(images)):
             copied = shutil.copy(image, pathlib.Path(".") / "OCR-D-IMG" / image.name)
             subprocess.run(
                 [
