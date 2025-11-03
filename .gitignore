@@ -1,5 +1,7 @@
 bin
 envs
+workspaces
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
