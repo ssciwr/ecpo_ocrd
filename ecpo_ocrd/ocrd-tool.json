@@ -1,0 +1,25 @@
+{
+  "git_url": "https://github.com/ssciwr/ecpo_ocrd",
+  "tools": {
+    "ocrd-regions-to-labelstudio": {
+      "categories": [
+        "Quality assurance"
+      ],
+      "description": "Export region segmentation to LabelStudio",
+      "executable": "ocrd-regions-to-labelstudio",
+      "input_file_grp_cardinality": 1,
+      "output_file_grp_cardinality": 1,
+      "parameters": {
+        "predictions": {
+          "default": false,
+          "description": "Whether to mark as predictions (e.g. for manual correction)",
+          "type": "boolean"
+        }
+      },
+      "steps": [
+        "evaluation/layout"
+      ]
+    }
+  },
+  "version": "0.0.1"
+}

@@ -4,6 +4,7 @@
 [build-system]
 requires = [
     "setuptools >=61",
+    "setuptools-ocrd",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -17,7 +18,7 @@ readme = "README.md"
 maintainers = [
     { name = "Dominic Kempf", email = "ssc@uni-heidelberg.de" },
 ]
-version = "0.0.1"
+dynamic = ["version"]
 requires-python = ">=3.8"
 license = { text = "MIT" }
 classifiers = [
@@ -28,10 +29,12 @@ classifiers = [
 dependencies = [
     "click",
     "ocrd",
+    "tqdm",
 ]
 
 [project.scripts]
 ecpo_ocrd = "ecpo_ocrd.__main__:main"
+ocrd-regions-to-labelstudio = "ecpo_ocrd.labelstudio:cli"
 
 # The following section contains setuptools-specific configuration
 # options. For a full reference of available options, check the overview
@@ -40,3 +43,4 @@ ecpo_ocrd = "ecpo_ocrd.__main__:main"
 packages = [
     "ecpo_ocrd",
 ]
+package-data = {"*" = ["ocrd-tool.json"]}
