@@ -8,6 +8,7 @@ from typing import Optional
 import click
 import json
 import pathlib
+import tqdm
 
 
 _color_list = [
@@ -99,7 +100,10 @@ class LabelStudioExportProcessor(Processor):
         self.tasks.append(
             {
                 "id": self.page.id,
-                "data": {"image": pathlib.Path(self.page.imageFilename).name},
+                "data": {
+                    "image": pathlib.Path(self.page.imageFilename).name,
+                    "name": pathlib.Path(self.page.imageFilename).stem,
+                },
                 key: [{"result": annotations}],
             }
         )
@@ -117,6 +121,7 @@ class LabelStudioExportProcessor(Processor):
             "id": region.id,
             "from_name": "label",
             "to_name": "image",
+            "type": "rectanglelabels",
             "value": {
                 "x": coords[0] / self.page.imageWidth * 100,
                 "y": coords[1] / self.page.imageHeight * 100,
@@ -131,6 +136,32 @@ class LabelStudioExportProcessor(Processor):
 @ocrd_cli_options
 def cli(*args, **kwargs):
     return ocrd_cli_wrap_processor(LabelStudioExportProcessor, *args, **kwargs)
+
+
+def _filename_to_url(filename):
+    if "jingbao" in filename:
+        pass
+
+
+def correct_urls(json_filename, sds, data_source):
+    with open(json_filename, "r") as f:
+        data = json.load(f)
+
+    for task in tqdm.tqdm(data):
+        # Find the one occurence on SDS
+        sds_paths = list(
+            (sds / "cats-ecpo" / "ecpo" / data_source).rglob(task["data"]["image"])
+        )
+        assert len(sds_paths) == 1
+        sds_path = sds_paths[0]
+
+        # Replace with IIIF URL
+        task["data"][
+            "image"
+        ] = f"https://ecpo.cats.uni-heidelberg.de/fcgi-bin/iipsrv.fcgi?IIIF=/ecpo/images/{str(sds_path.relative_to(sds / 'cats-ecpo' / 'ecpo'))}/full/full/0/default.jpg"
+
+    with open(json_filename, "w") as f:
+        json.dump(data, f)
 
 
 if __name__ == "__main__":

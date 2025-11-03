@@ -1,5 +1,6 @@
 from ecpo_ocrd.install import install as install_main
 from ecpo_ocrd.install import uninstall as uninstall_main
+from ecpo_ocrd.labelstudio import correct_urls
 from ecpo_ocrd.workspace import create as create_main
 
 import click
@@ -105,6 +106,46 @@ def create(workspace, sds, data, sample):
 def uninstall(prefix):
     """Uninstall the ECPO OCR-D tools from the given prefix."""
     uninstall_main(prefix=prefix)
+
+
+@main.command("correct-ls-urls")
+@click.option(
+    "--labelstudio-json",
+    type=click.Path(
+        file_okay=True,
+        dir_okay=False,
+        writable=True,
+        path_type=pathlib.Path,
+        exists=True,
+        resolve_path=True,
+    ),
+    default="labelstudio.json",
+    help="The path to the generated labelstudio JSON file",
+)
+@click.option(
+    "--sds",
+    "-s",
+    type=click.Path(
+        path_type=pathlib.Path,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+    ),
+    help="The SDS@HD mountpoint. Must point to the directory of the SV sd21c016.",
+    default=pathlib.Path.home() / "sds" / "sd21c016",
+    show_default=True,
+)
+@click.option(
+    "--data",
+    "-d",
+    type=str,
+    help="Magazine identifier in the ECPO data",
+    default="jingbao",
+    show_default=True,
+)
+def correct_ls_urls(labelstudio_json, sds, data):
+    return correct_urls(labelstudio_json, sds, data)
 
 
 if __name__ == "__main__":

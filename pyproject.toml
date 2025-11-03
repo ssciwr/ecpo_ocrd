@@ -29,6 +29,7 @@ classifiers = [
 dependencies = [
     "click",
     "ocrd",
+    "tqdm",
 ]
 
 [project.scripts]
