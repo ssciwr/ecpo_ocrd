@@ -35,4 +35,4 @@ ocrd-cis-ocropy-deskew -I OCR-D-DENOISE -O OCR-D-DESKEW-PAGE -P level-of-operati
 ocrd-paddleocr-segment -I OCR-D-IMG -O OCR-D-SEG -P threshold 40
 
 # Output visualization
-ocrd-pagetopdf -I OCR-D-SEG -O OCR-D-PDF -P outlines region
+ocrd-regions-to-labelstudio -I OCR-D-SEG -O OCR-D-LS
