@@ -152,8 +152,15 @@ def correct_urls(json_filename, sds, data_source):
         sds_paths = list(
             (sds / "cats-ecpo" / "ecpo" / data_source).rglob(task["data"]["image"])
         )
-        assert len(sds_paths) == 1
-        sds_path = sds_paths[0]
+
+        assert sds_paths
+
+        def pick_one(paths):
+            for path in paths:
+                if "Old files" not in str(path):
+                    return path
+
+        sds_path = pick_one(sds_paths)
 
         # Replace with IIIF URL
         task["data"][
