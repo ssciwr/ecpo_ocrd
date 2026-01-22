@@ -17,6 +17,7 @@ description = "An OCR-D pipeline for ECPO"
 readme = "README.md"
 maintainers = [
     { name = "Dominic Kempf", email = "ssc@uni-heidelberg.de" },
+    { name = "Kim Tuyen Le", email = "ssc@uni-heidelberg.de" },
 ]
 dynamic = ["version"]
 requires-python = ">=3.8"
@@ -30,6 +31,17 @@ dependencies = [
     "click",
     "ocrd",
     "tqdm",
+    "numpy",
+    "jsonschema",
+    "paddlepaddle==3.2.0",
+    "paddleocr[all]==3.3.1",
+    "ruptures==1.1.10",
+]
+
+[project.optional-dependencies]
+tests = [
+    "pytest",
+    "pytest-cov",
 ]
 
 [project.scripts]
