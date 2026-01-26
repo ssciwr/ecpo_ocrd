@@ -102,7 +102,7 @@ def test_find_split_points(get_img_path):
     assert len(org_bkps) == 4
 
 
-def test_slice_and_save(get_img_path, tmp_path):
+def test_no_ocrd_slice_and_save_to_files(get_img_path, tmp_path):
     in_img, det_polys = sp.get_text_detections_paddleocr(
         str(get_img_path), ocr_model="PP-OCRv5_server_det", device="cpu"
     )
@@ -119,7 +119,7 @@ def test_slice_and_save(get_img_path, tmp_path):
     out_dir = tmp_path / "output_images"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    sp.slice_and_save(
+    sp.no_ocrd_slice_and_save_to_files(
         in_img,
         split_points,
         out_dir,
@@ -137,7 +137,7 @@ def test_slice_and_save(get_img_path, tmp_path):
     out_dir_2seg = tmp_path / "output_images_2seg"
     out_dir_2seg.mkdir(parents=True, exist_ok=True)
 
-    sp.slice_and_save(
+    sp.no_ocrd_slice_and_save_to_files(
         in_img,
         split_points,
         out_dir_2seg,

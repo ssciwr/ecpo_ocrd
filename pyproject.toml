@@ -47,6 +47,7 @@ tests = [
 [project.scripts]
 ecpo_ocrd = "ecpo_ocrd.__main__:main"
 ocrd-regions-to-labelstudio = "ecpo_ocrd.labelstudio:cli"
+ocrd-split-pages = "ecpo_ocrd.split_pages:cli"
 
 # The following section contains setuptools-specific configuration
 # options. For a full reference of available options, check the overview

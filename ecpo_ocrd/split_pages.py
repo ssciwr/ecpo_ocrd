@@ -1,49 +1,26 @@
-"""
-split_pages.py
-
-Usage:
-    python split_pages.py [--config config_file.json --tag unique_tag]
-
-Notes:
-- For each input image it will:
-    1) use PaddleOCR to find text detection on the image
-    2) compute signal (column-wise projection) to find vertical split points
-        2.1) based on the text detection result to mask text areas, masked areas are white, background is black
-        2.2) compute column-wise projection on the masked image, i.e. mean of pixel values per column (signal)
-    3) find vertical split points based on the signal
-        3.1) use Dynamic Programming to find vertical breakpoints of significant gaps
-        3.2) find refined points between those breakpoints that their signal near zero (black), i.e. no text there
-        3.3) only consider points near the center to ensure we have num_segments - 1 splits
-    4) split into vertical segments at those refined points; always covers full width
-    5) save segments as <img_name>_pX.jpg
-
-Default config in root/config/default_config.json
-"""
-
-# the below code use opencv python
-# another option to consider is scantailor-advanced
-# https://github.com/4lex4/scantailor-advanced?tab=readme-ov-file
-
+from ocrd import Processor, Workspace, OcrdPage, OcrdPageResult, OcrdPageResultImage
+from ocrd.decorators import ocrd_cli_options, ocrd_cli_wrap_processor
+from ocrd_utils import points_from_polygon
+from ocrd_models.ocrd_page import BorderType, CoordsType, AlternativeImageType
+from typing import Optional
 
 import numpy as np
 import numpy.typing as npt
-from tqdm import tqdm
-import argparse
-from ecpo_ocrd import config_handler
 from ecpo_ocrd import utils
 from pathlib import Path
-from typing import List, Tuple, Callable, Dict, Any
-import shutil
+from typing import List, Tuple, Callable
 from paddleocr import TextDetection
 from PIL import Image, ImageDraw
 import ruptures as rpt
+import click
+from copy import deepcopy
 
 
 # ----------------------------
 # Step 1: use PaddleOCR to detect text
 # ----------------------------
 def get_text_detections_paddleocr(
-    img_path: Path, ocr_model: str, device: str = "cpu"
+    img: Path | np.ndarray, ocr_model: str, device: str = "cpu"
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Get text detections using PaddleOCR.
 
@@ -51,7 +28,7 @@ def get_text_detections_paddleocr(
     Dynamic Programming results than using with a pre-loaded image (as numpy array).
 
     Args:
-        img_path (Path): Path to the input image.
+        img (Path | np.ndarray): Path to the input image or a pre-loaded image as a numpy array.
         ocr_model (str): PaddleOCR model name.
         device (str): Device to run the model on. e.g. "cpu", "gpu", "gpu:0".
 
@@ -59,7 +36,7 @@ def get_text_detections_paddleocr(
         Tuple[np.ndarray, np.ndarray]: The input image and detected text polygons.
     """
     model = TextDetection(model_name=ocr_model, device=device)
-    det_result = model.predict(img_path, batch_size=1)
+    det_result = model.predict(img, batch_size=1)
 
     first_result = det_result[0]  # only one image
     in_img = first_result.get("input_img")
@@ -183,9 +160,9 @@ def find_split_points(
 
 
 # ----------------------------
-# Step 4 & 5: Slice & save
+# Step 4 & 5: Slice & save, no-OCR-D version
 # ----------------------------
-def slice_and_save(
+def no_ocrd_slice_and_save_to_files(
     img: np.ndarray,
     splits_internal: List[int],
     output_dir: Path,
@@ -194,11 +171,13 @@ def slice_and_save(
     segment_size: int = 300,
     jpeg_quality: int = 95,
 ):
-    """Slice the rectified image at the given split columns and save segments.
+    """Slice the image at the given split columns and save segments.
     Segments are saved as <fname>_pX.jpg where X is the segment index starting from 0.
 
+    This function is not tied to OCR-D workspace, it's a standalone function.
+
     Args:
-        img (np.ndarray): Rectified image in RGB format (H, W, 3).
+        img (np.ndarray): Input image in RGB format (H, W, 3).
         splits_internal (List[int]): List of internal split columns (x coordinates).
         output_dir (Path): Directory to save the segments.
         fname (str): filename of the image, used for naming output segments.
@@ -212,7 +191,6 @@ def slice_and_save(
     current_cut = cuts[0]
     i = 0
     for next_cut in cuts[1:]:
-        # ensure non-empty
         if next_cut - current_cut <= segment_size:
             continue  # too narrow, skip
 
@@ -235,92 +213,140 @@ def slice_and_save(
 
 
 # ----------------------------
-# Main batch function
+# Step 4 & 5: Slice & save, OCR-D version
 # ----------------------------
-def process_folder(
-    config_path: str | None = None,
-    new_config: Dict | None = None,
-    unique_tag: str | None = None,
-) -> Dict[str, Dict[str, Any]]:
-    """Process a folder of images to split pages according to the config.
+def slice_and_save_ocrd(
+    img: np.ndarray,
+    splits_internal: List[int],
+    pcgts: OcrdPage,
+    workspace: Workspace,
+    page_id: Optional[str],
+    segment_size: int = 300,
+) -> OcrdPageResult:
+    """Slice the image at the given split columns and save segments
+    into the OCR-D workspace. Each segment is saved as a new file in the output file
+    group, and a corresponding Page object is created for each segment.
 
     Args:
-        config_path (str | None): Path to the config file.
-            If None or "default", use default config.
-        new_config (Dict | None): New config to override the loaded config.
-        unique_tag (str | None): Unique tag to append to output files.
-            If None, tag will be "ts{YYYYMMDD-HHMMSS}_h{hostname}".
+        img (np.ndarray): Input image in RGB format (H, W, 3).
+        splits_internal (List[int]): List of internal split columns (x coordinates).
+        pcgts (OcrdPage): The original OCR-D page object.
+        workspace (Workspace): The OCR-D workspace to save new files.
+        page_id (Optional[str]): The ID of the original page.
+        segment_size (int): Minimum size in pixels of segment to consider for splits.
 
     Returns:
-        Dict[str, Any]: Debug information for each processed file.
+        OcrdPageResult: Result containing new OCR-D page objects for each segment.
     """
-    # load config
-    config, _ = config_handler.load_config(
-        config_path=config_path, new_config=new_config
+    h, w = img.shape[:2]
+    cuts = [0] + splits_internal + [w]
+    border_polygons = []
+    current_cut = cuts[0]
+    for next_cut in cuts[1:]:
+        if next_cut - current_cut <= segment_size:
+            continue  # too narrow, skip
+
+        # create border polygon for the segment
+        border_polygon = [
+            (current_cut, 0),
+            (next_cut, 0),
+            (next_cut, h),
+            (current_cut, h),
+        ]
+        border_polygons.append(border_polygon)
+
+        # update for next
+        current_cut = next_cut
+
+    # create a wrapper for the output pages
+    # refer to: https://github.com/OCR-D/ocrd_anybaseocr/pull/115
+    results = OcrdPageResult(
+        pcgts, *[deepcopy(pcgts) for _ in range(len(border_polygons) - 1)]
     )
-    input_dir = Path(config.get("input_dir"))
-    gutter_detect_config = config.get("gutter_detection")
+    for i, (result, border_polygon) in enumerate(zip(results, border_polygons)):
+        # set page border
+        border = BorderType(
+            Coords=CoordsType(points=points_from_polygon(border_polygon))
+        )
+        result.pcgts.Page.set_Border(border)
 
-    if not input_dir or input_dir.is_file():
-        raise ValueError("Input directory is not specified or is a file.")
+        # let OCR-D crop the image to the border
+        cropped_image, cropped_coords, _ = workspace.image_from_page(
+            result.pcgts.Page, page_id, fill="background", transparency=True
+        )
 
-    if not gutter_detect_config:
-        raise ValueError("Gutter detection config is missing.")
+        # record the coordinate transformation as AlternativeImage for downstream tools
+        alt_image = AlternativeImageType(
+            comments=cropped_coords["features"],
+        )
+        result.pcgts.Page.add_AlternativeImage(alt_image)
 
-    output_dir = Path(gutter_detect_config.get("output_dir"))
-    ocr_model = gutter_detect_config.get("ocr_model", "PP-OCRv5_server_det")
-    device = gutter_detect_config.get("device", "cpu")
-    proj_func_name = gutter_detect_config.get("proj_func", "mean")
-    number_breakpoints = gutter_detect_config.get("number_breakpoints", 4)
-    close_threshold = gutter_detect_config.get("close_threshold", 1e-3)
-    fallback_to_center = gutter_detect_config.get("fallback_to_center", True)
-    num_segments = gutter_detect_config.get("num_segments", 2)
-    segment_size = gutter_detect_config.get("segment_size", 400)
-    jpeg_quality = gutter_detect_config.get("jpeg_quality", 95)
+        # attach the cropped image to the result
+        result.images.append(
+            OcrdPageResultImage(cropped_image, f".IMG-SPLIT-{i}", alt_image)
+        )
 
-    proj_func_map = {
-        "mean": np.mean,
-        "sum": np.sum,
-        "max": np.max,
-        "min": np.min,
-    }
+    return results
 
-    proj_func = proj_func_map.get(proj_func_name, np.mean)
 
-    # ensure the output dir exists
-    utils.ensure_dir(output_dir)
+# use above functions for an ocrd processor class
+class SplitPagesProcessor(Processor):
+    """OCR-D Processor to split pages into multiple segments based on gutter detection."""
 
-    # prepare tag and save used config
-    if unique_tag is None:
-        unique_tag = utils.generate_unique_tag()
-    config_handler.save_config_to_file(
-        config, output_dir, file_name=f"used_config_{unique_tag}.json"
-    )
-    # save a copy of this script
-    shutil.copy2(Path(__file__), output_dir / f"split_pages_{unique_tag}.py")
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fallback_count = 0
+        self.fallback_page_ids = []
 
-    # collect all files in input dir
-    files = sorted(
-        f
-        for f in input_dir.iterdir()
-        if f.is_file() and f.suffix.lower() in (".jpg", ".jpeg", ".png")
-    )
+    def process_page_pcgts(
+        self, *input_pcgts: Optional[OcrdPage], page_id: Optional[str] = None
+    ) -> OcrdPageResult:
+        """Override process_page_pcgts of Processor to split pages into multiple groups.
 
-    log_lines = []
-    fallback_count = 0
-    fallback_files = []
-    debug_info = {}
-    for _, fpath in enumerate(tqdm(files, desc="files")):
+        For each physical page image, the processor will:
+
+            1) use PaddleOCR to find text detection on the image
+            2) compute signal (column-wise projection) to find vertical split points
+                2.1) based on the text detection result to mask text areas, masked areas are white, background is black
+                2.2) compute column-wise projection on the masked image, i.e. mean of pixel values per column (signal)
+            3) find vertical split points based on the signal
+                3.1) use Dynamic Programming to find vertical breakpoints of significant gaps
+                3.2) find refined points between those breakpoints that their signal near zero (black), i.e. no text there
+                3.3) only consider points near the center to ensure we have num_segments - 1 splits
+            4) split into vertical segments at those refined points; always covers full width
+            5) save segments into corresponding output file groups
+        """
+        assert input_pcgts
+        assert input_pcgts[0]
+        assert self.parameter  # default values or from CLI with -p or -P
+
+        pcgts = input_pcgts[0]
+        page = pcgts.get_Page()
+
+        page_image, page_coords, page_info = self.workspace.image_from_page(
+            page,
+            page_id,
+            feature_selector="deskewed",  # use deskewed image if available
+            feature_filter="cropped,binarized,grayscale_normalized",
+        )
 
         # step 1: use PaddleOCR to detect text
+        paddleocr_model = self.parameter.get("paddleocr_model", "PP-OCRv5_server_det")
+        device = self.parameter.get("device", "cpu")
         in_img, dt_polys = get_text_detections_paddleocr(
-            str(fpath), ocr_model=ocr_model, device=device
+            np.ndarray(page_image), ocr_model=paddleocr_model, device=device
         )
 
         # step 2: compute signal
+        proj_func_name = self.parameter.get("proj_func", "mean")
+        proj_func = getattr(np, proj_func_name)
         signal, mask_array = compute_signal(in_img, dt_polys, proj_func=proj_func)
 
         # step 3: find split points
+        number_breakpoints = self.parameter.get("number_breakpoints", 4)
+        close_threshold = self.parameter.get("close_threshold", 3.0)
+        fallback_to_center = self.parameter.get("fallback_to_center", True)
+        num_segments = self.parameter.get("num_segments", 2)
         points, fallback, org_bkps = find_split_points(
             signal,
             num_bkps=number_breakpoints,
@@ -328,76 +354,31 @@ def process_folder(
             num_segments=num_segments,
             fallback=fallback_to_center,
         )
+
         if fallback:
-            fallback_count += 1
-            fallback_files.append(fpath.name)
+            self.fallback_count += 1
+            if page_id:
+                self.fallback_page_ids.append(page_id)
+                self.logger.info(f"Fallback to center for page {page_id}")
 
         # step 4 & 5: slice & save
-        saved = slice_and_save(
+        segment_size = self.parameter.get("segment_size", 400)
+        results = slice_and_save_ocrd(
             in_img,
             points,
-            output_dir,
-            fpath.stem,
-            unique_tag=unique_tag,
+            pcgts,
+            self.workspace,
+            page_id,
             segment_size=segment_size,
-            jpeg_quality=jpeg_quality,
         )
 
-        # log
-        split_str = ",".join(str(x) for x in points)
-        log_lines.append(
-            f"{fpath.name}\t{len(saved)}\t{split_str}\t{'x' if fallback else ''}"
-        )
-
-        # debug info
-        debug_info[fpath.name] = {
-            "mask_array": mask_array,
-            "signal": signal,
-            "org_bkps": org_bkps,
-            "refined_bkps": points,
-            "fallback": fallback,
-        }
-
-    # write log
-    with open(output_dir / f"split_log_{unique_tag}.csv", "w", encoding="utf8") as f:
-        f.write("input_file\tsegments\tsplits_internal\tfallback\n")
-        for L in log_lines:
-            f.write(L + "\n")
-
-    # display summary
-    print(f"Processed {len(files)} files.")
-    print(f"Output saved to: {output_dir}")
-    print(f"Fallback to center split used in {fallback_count} files.")
-    if fallback_count > 0:
-        print("Files with fallback:")
-        for fn in fallback_files:
-            print(f" - {fn}")
-
-    return debug_info
+        return results
 
 
 # ----------------------------
-# CLI
+# CLI for OCR-D pipeline
 # ----------------------------
-if __name__ == "__main__":
-    p = argparse.ArgumentParser(description="Batch-split images into page segments.")
-    p.add_argument(
-        "-c",
-        "--config",
-        type=str,
-        required=False,
-        help="Path to the config file.",
-    )
-
-    p.add_argument(
-        "-t",
-        "--tag",
-        type=str,
-        required=False,
-        help="Unique tag to append to output files.",
-    )
-
-    args = p.parse_args()
-    process_folder(
-        config_path=args.config, unique_tag=args.tag
-    )  # omit new_config for CLI
+@click.command()
+@ocrd_cli_options
+def cli(*args, **kwargs):
+    return ocrd_cli_wrap_processor(SplitPagesProcessor, *args, **kwargs)
