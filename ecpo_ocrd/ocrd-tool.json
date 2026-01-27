@@ -27,7 +27,7 @@
       "description": "Split a page into multiple segments based on gutter detection",
       "executable": "ocrd-split-pages",
       "input_file_grp_cardinality": 1,
-      "output_file_grp_cardinality": [1],
+      "output_file_grp_cardinality": [1, 2, 3],
       "parameters": {
         "paddleocr_model": {
             "type": "string",
@@ -46,7 +46,7 @@
             "description": "Projection function to use for gutter detection."
         },
         "number_breakpoints": {
-            "type": "integer",
+            "type": "number",
             "minimum": 1,
             "default": 4,
             "description": "Number of breakpoints (splits) to detect using Dynamic Programming."
@@ -63,20 +63,20 @@
             "description": "If no minima detected, whether to fallback to a single center split (two pages)"
         },
         "num_segments": {
-            "type": "integer",
+            "type": "number",
             "minimum": 1,
             "default": 2,
             "description": "Number of segments (pages) to split the image into."
         },
         "segment_size": {
-            "type": "integer",
+            "type": "number",
             "minimum": 1,
             "default": 400,
             "description": "Minimum width in pixels for a segment to be valid. Segments smaller than this are skipped. Used for cases with text in the gutter."
         }
       },
       "steps": [
-        "preprocessing/optimization/splitting"
+        "preprocessing/optimization/cropping"
       ]
     }
   },

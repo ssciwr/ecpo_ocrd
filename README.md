@@ -41,3 +41,8 @@ Then, you can run any of the provided workflow shell scripts e.g.
 ```bash
 ../workflows/jingbao.sh
 ```
+
+**Note**: To binarize images using the `default-2021-03-09` model, as shown in the `jingbao.sh` example, you must first download the model.
+```bash
+ocrd resmgr download ocrd-sbb-binarize default-2021-03-09
+```

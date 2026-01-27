@@ -326,15 +326,23 @@ class SplitPagesProcessor(Processor):
         page_image, page_coords, page_info = self.workspace.image_from_page(
             page,
             page_id,
-            feature_selector="deskewed",  # use deskewed image if available
-            feature_filter="cropped,binarized,grayscale_normalized",
+            feature_selector="deskewed",  # use deskewed image only
         )
+
+        # # step 0: get path of the current page image
+        # img_rel_path = page.get_imageFilename()
+        # if not img_rel_path:
+        #     raise RuntimeError(f"No ImageFilename found for page {page_id}.")
+        # img_path = Path(self.workspace.directory) / img_rel_path
+        # self.logger.info(f"Splitting page {page_id} with image {img_path}")
 
         # step 1: use PaddleOCR to detect text
         paddleocr_model = self.parameter.get("paddleocr_model", "PP-OCRv5_server_det")
         device = self.parameter.get("device", "cpu")
         in_img, dt_polys = get_text_detections_paddleocr(
-            np.ndarray(page_image), ocr_model=paddleocr_model, device=device
+            np.array(page_image.convert("RGB")),  # PaddleOCR needs RGB images
+            ocr_model=paddleocr_model,
+            device=device,
         )
 
         # step 2: compute signal
