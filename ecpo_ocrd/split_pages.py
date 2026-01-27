@@ -215,13 +215,70 @@ def no_ocrd_slice_and_save_to_files(
 # ----------------------------
 # Step 4 & 5: Slice & save, OCR-D version
 # ----------------------------
+def refine_border_polygons(
+    border_polygons: List[List[Tuple[int, int]]], expected_num_segments: int
+):
+    """Refine border polygons based on the expected number of segments.
+    If there are more polygons than expected, merge the smallest closest ones.
+    If there are fewer, raise warning.
+    If there are fewer or equal, keep as is.
+
+    Args:
+        border_polygons (List[List[Tuple[int, int]]]): List of border polygons.
+        expected_num_segments (int): Expected number of segments (pages).
+
+    Returns:
+        List[List[Tuple[int, int]]]: Refined list of border polygons.
+    """
+    if len(border_polygons) < expected_num_segments:
+        print(
+            f"Warning: Found only {len(border_polygons)} segments, "
+            f"expected {expected_num_segments}. Keeping as is."
+        )
+        return border_polygons
+
+    while len(border_polygons) > expected_num_segments:
+        # find the pair of adjacent polygons with the smallest width
+        min_width = float("inf")
+        min_index = -1
+        for i in range(len(border_polygons) - 1):
+            left_poly = border_polygons[i]
+            right_poly = border_polygons[i + 1]
+            width = right_poly[1][0] - left_poly[0][0]
+            if width < min_width:
+                min_width = width
+                min_index = i
+
+        # merge the pair
+        left_poly = border_polygons[min_index]
+        # TODO: check index out of range
+        # also, maybe compare the widths of left and right polygons to decide how to merge
+        right_poly = border_polygons[min_index + 1]
+        merged_poly = [
+            (left_poly[0][0], left_poly[0][1]),
+            (right_poly[1][0], right_poly[1][1]),
+            (right_poly[2][0], right_poly[2][1]),
+            (left_poly[3][0], left_poly[3][1]),
+        ]
+
+        # update the list
+        border_polygons = (
+            border_polygons[:min_index]
+            + [merged_poly]
+            + border_polygons[min_index + 2 :]
+        )
+
+    return border_polygons
+
+
 def slice_and_save_ocrd(
     img: np.ndarray,
     splits_internal: List[int],
     pcgts: OcrdPage,
     workspace: Workspace,
     page_id: Optional[str],
-    segment_size: int = 300,
+    expected_num_segments: int = 2,
+    segment_size: Optional[int] = 300,
 ) -> OcrdPageResult:
     """Slice the image at the given split columns and save segments
     into the OCR-D workspace. Each segment is saved as a new file in the output file
@@ -233,7 +290,9 @@ def slice_and_save_ocrd(
         pcgts (OcrdPage): The original OCR-D page object.
         workspace (Workspace): The OCR-D workspace to save new files.
         page_id (Optional[str]): The ID of the original page.
-        segment_size (int): Minimum size in pixels of segment to consider for splits.
+        expected_num_segments (int): Expected number of segments (pages)
+            to split the image into.
+        segment_size (Optional[int]): Minimum size in pixels of segment to consider for splits.
 
     Returns:
         OcrdPageResult: Result containing new OCR-D page objects for each segment.
@@ -242,6 +301,8 @@ def slice_and_save_ocrd(
     cuts = [0] + splits_internal + [w]
     border_polygons = []
     current_cut = cuts[0]
+
+    # slicing
     for next_cut in cuts[1:]:
         if next_cut - current_cut <= segment_size:
             continue  # too narrow, skip
@@ -258,6 +319,7 @@ def slice_and_save_ocrd(
         # update for next
         current_cut = next_cut
 
+    # saving
     # create a wrapper for the output pages
     # refer to: https://github.com/OCR-D/ocrd_anybaseocr/pull/115
     results = OcrdPageResult(
