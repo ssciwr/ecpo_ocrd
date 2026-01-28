@@ -88,7 +88,6 @@ def find_split_points(
     signal: np.ndarray,
     num_bkps: int = 4,
     close_thres: float = 1e-3,
-    num_segments: int = 2,
     fallback: bool = True,
 ) -> Tuple[List[int], bool, List[int]]:
     """Find breakpoints in the signal using Dynamic Programming,
@@ -98,7 +97,6 @@ def find_split_points(
         signal (np.ndarray): 1D array representing the signal.
         num_bkps (int): Number of breakpoints to find with DP.
         close_thres (float): Threshold to consider a point as "close to zero".
-        num_segments (int): Number of segments (pages) to split the image into.
         fallback (bool): Whether to fallback to center split if no breakpoints found.
 
     Returns:
@@ -135,7 +133,6 @@ def find_split_points(
         groups.append(current_group)
 
     # record only the edges of each group as refined breakpoints
-    center = signal.shape[0] / 2
     refined_bkps = []
     for group in groups:
         refined_bkps.append(group[0])
@@ -143,21 +140,14 @@ def find_split_points(
 
     assert len(refined_bkps) % 2 == 0, "Refined breakpoints should be in pairs."
 
-    # get only breakpoints near the center to make sure we have num_segments - 1 splits
-    near_center_bkps = sorted(
-        refined_bkps,
-        key=lambda x: abs(x - center),
-    )[: num_segments - 1]
-    near_center_bkps = sorted(near_center_bkps)
-
     use_fallback = False
-    if not near_center_bkps and fallback:
+    if not refined_bkps and fallback:
         # fallback to center split
         w = signal.shape[0]
-        near_center_bkps = [w // 2]
+        refined_bkps = [w // 2]
         use_fallback = True
 
-    return near_center_bkps, use_fallback, bkps
+    return refined_bkps, use_fallback, bkps
 
 
 # ----------------------------
@@ -234,34 +224,66 @@ def refine_border_polygons(
     """
     if len(border_polygons) < expected_num_segments:
         return border_polygons, True
-    while len(border_polygons) > expected_num_segments:
-        # find the pair of adjacent polygons with the smallest width
-        min_width = float("inf")
-        min_index = -1
-        for i in range(len(border_polygons) - 1):
-            left_poly = border_polygons[i]
-            right_poly = border_polygons[i + 1]
-            width = right_poly[1][0] - left_poly[0][0]
-            if width < min_width:
-                min_width = width
-                min_index = i
 
-        # merge the pair
-        left_poly = border_polygons[min_index]
-        right_poly = border_polygons[min_index + 1]
-        merged_poly = [
-            (left_poly[0][0], left_poly[0][1]),
-            (right_poly[1][0], right_poly[1][1]),
-            (right_poly[2][0], right_poly[2][1]),
-            (left_poly[3][0], left_poly[3][1]),
-        ]
+    if expected_num_segments <= 2:
+        while len(border_polygons) > expected_num_segments:
+            # find the pair of adjacent polygons with the smallest width
+            min_width = float("inf")
+            min_index = -1
+            for i in range(len(border_polygons) - 1):
+                left_poly = border_polygons[i]
+                right_poly = border_polygons[i + 1]
+                width = right_poly[1][0] - left_poly[0][0]
+                if width < min_width:
+                    min_width = width
+                    min_index = i
 
-        # update the list
-        border_polygons = (
-            border_polygons[:min_index]
-            + [merged_poly]
-            + border_polygons[min_index + 2 :]
-        )
+            # merge the pair
+            left_poly = border_polygons[min_index]
+            right_poly = border_polygons[min_index + 1]
+            merged_poly = [
+                (left_poly[0][0], left_poly[0][1]),
+                (right_poly[1][0], right_poly[1][1]),
+                (right_poly[2][0], right_poly[2][1]),
+                (left_poly[3][0], left_poly[3][1]),
+            ]
+
+            # update the list
+            border_polygons = (
+                border_polygons[:min_index]
+                + [merged_poly]
+                + border_polygons[min_index + 2 :]
+            )
+    else:
+        # find the segment in the middle,
+        # which is the one that overlapps with the center of the image
+        # don't merge this one with others
+        # merge others from left and right towards center
+
+        # find left, middle, and right polygon lists
+        w_left = border_polygons[0][0][0]
+        w_right = border_polygons[-1][1][0]
+        center = (w_left + w_right) // 2
+        left_polys = []
+        right_polys = []
+        middle_poly = []
+        for poly in border_polygons:
+            if poly[0][0] <= center <= poly[1][0]:
+                middle_poly.append(poly)
+            elif poly[1][0] < center:
+                left_polys.append(poly)
+            else:
+                right_polys.append(poly)
+
+        # determine max number of merges on each side
+        total_polys = len(border_polygons)
+        num_merges = total_polys - expected_num_segments
+        max_left_merges = len(left_polys)
+        max_right_merges = len(right_polys)
+        left_merges = min(num_merges // 2, max_left_merges)
+        right_merges = min(num_merges - left_merges, max_right_merges)
+
+        # TODO: continue...
 
     return border_polygons, False
 

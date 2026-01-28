@@ -30,12 +30,13 @@
 # # ocrd-anybaseocr-dewarp -I OCR-D-DESKEW-PAGE -O OCR-D-DEWARP-PAGE
 
 # Step 7: Splitting page into multiple segments based on gutter detection
-# TODO: how to call this with parameters from a json file?
-ocrd-split-pages -I OCR-D-DESKEW-PAGE -O MORE-OCR-D-SPLIT-L,MORE-OCR-D-SPLIT-M,MORE-OCR-D-SPLIT-R
-
-ocrd-split-pages -I OCR-D-DESKEW-PAGE -O EXACT-OCR-D-SPLIT-L,EXACT-OCR-D-SPLIT-R
-
-ocrd-split-pages -I OCR-D-DESKEW-PAGE -O ONE-OCR-D-SPLIT
+# depending on the images, we can split into 2, 3 or even more segments
+# the number of output file groups must match the expected number of segments
+# ocrd-split-pages -I OCR-D-DESKEW-PAGE -O MORE-OCR-D-SPLIT-L,MORE-OCR-D-SPLIT-M,MORE-OCR-D-SPLIT-R
+# ocrd-split-pages -I OCR-D-DESKEW-PAGE -O EXACT-OCR-D-SPLIT-L,EXACT-OCR-D-SPLIT-R
+# ocrd-split-pages -I OCR-D-DESKEW-PAGE -O ONE-OCR-D-SPLIT
+# we can also use an external configuration JSON file to specify values for splitting parameters
+ocrd-split-pages -I OCR-D-DESKEW-PAGE -O CONFIG-OCR-D-SPLIT-L,CONFIC-OCR-D-SPLIT-M,CONFIG-OCR-D-SPLIT-R -p ../ecpo_ocrd/config/config_jingbao_3segs_1930.json
 
 # # Step 7: Region segmentation
 # # Note: Eynollah does not work for me here, as it does not download one of the required models.
