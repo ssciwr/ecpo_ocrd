@@ -27,7 +27,7 @@
       "description": "Split a page into multiple segments based on gutter detection",
       "executable": "ocrd-split-pages",
       "input_file_grp_cardinality": 1,
-      "output_file_grp_cardinality": [1, 2, 3],
+      "output_file_grp_cardinality": [1, -1],
       "parameters": {
         "paddleocr_model": {
             "type": "string",
