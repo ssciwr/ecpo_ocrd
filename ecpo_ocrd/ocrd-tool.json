@@ -62,12 +62,6 @@
             "default": true,
             "description": "If no minima detected, whether to fallback to a single center split (two pages)"
         },
-        "num_segments": {
-            "type": "number",
-            "minimum": 1,
-            "default": 2,
-            "description": "Number of segments (pages) to split the image into."
-        },
         "segment_size": {
             "type": "number",
             "minimum": 1,

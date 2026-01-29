@@ -6,7 +6,6 @@ from typing import Optional
 
 import numpy as np
 import numpy.typing as npt
-from ecpo_ocrd import utils
 from pathlib import Path
 from typing import List, Tuple, Callable
 from paddleocr import TextDetection
@@ -151,72 +150,80 @@ def find_split_points(
 
 
 # ----------------------------
-# Step 4 & 5: Slice & save, no-OCR-D version
-# ----------------------------
-def no_ocrd_slice_and_save_to_files(
-    img: np.ndarray,
-    splits_internal: List[int],
-    output_dir: Path,
-    fname: str,
-    unique_tag: str,
-    segment_size: int = 300,
-    jpeg_quality: int = 95,
-):
-    """Slice the image at the given split columns and save segments.
-    Segments are saved as <fname>_pX.jpg where X is the segment index starting from 0.
-
-    This function is not tied to OCR-D workspace, it's a standalone function.
-
-    Args:
-        img (np.ndarray): Input image in RGB format (H, W, 3).
-        splits_internal (List[int]): List of internal split columns (x coordinates).
-        output_dir (Path): Directory to save the segments.
-        fname (str): filename of the image, used for naming output segments.
-        unique_tag (str): unique tag to append to output image filenames.
-        segment_size (int): Minimum size in pixels of segment to consider for splits.
-        jpeg_quality (int): JPEG quality for saving images.
-    """
-    w = img.shape[1]
-    cuts = [0] + splits_internal + [w]
-    saved = []
-    current_cut = cuts[0]
-    i = 0
-    for next_cut in cuts[1:]:
-        if next_cut - current_cut <= segment_size:
-            continue  # too narrow, skip
-
-        # create an image of same size but mask other areas except the segment
-        seg = img[:, current_cut:next_cut]
-        out_img = np.full_like(img, 255)
-        out_img[:, current_cut:next_cut] = seg
-
-        # save the image with only the segment visible
-        outname = f"{fname}_p{i}_{unique_tag}.jpg"
-        outpath = output_dir / outname
-        utils.save_jpeg(outpath, out_img, quality=jpeg_quality)
-        saved.append((outpath, current_cut, next_cut))
-
-        # update for next
-        current_cut = next_cut
-        i += 1
-
-    return saved
-
-
-# ----------------------------
 # Step 4 & 5: Slice & save, OCR-D version
 # ----------------------------
+def _merge_polygons(
+    polygons: List[List[Tuple[int, int]]], expected_polygon_num: int
+) -> List[List[Tuple[int, int]]]:
+    """Merge polygons to reduce their number to a given expected number.
+    Two adjacent polygons with the smallest width between them are merged iteratively.
+
+    Assumption: polygons are non-overlapping sorted from left to right.
+
+    Args:
+        polygons (List[List[Tuple[int, int]]]): List of polygons.
+        expected_polygon_num (int): Expected number of polygons.
+
+    Returns:
+        List[List[Tuple[int, int]]]: Merged list of polygons.
+    """
+    if expected_polygon_num < 0:
+        raise ValueError("Expected polygon number must be a non-negative number.")
+
+    if not polygons or expected_polygon_num == 0:
+        return polygons  # do nothing
+
+    while len(polygons) > expected_polygon_num:
+        # find the pair of adjacent polygons with the smallest width
+        min_width = float("inf")
+        min_index = -1
+        for i in range(len(polygons) - 1):
+            left_poly = polygons[i]
+            right_poly = polygons[i + 1]
+            width = right_poly[1][0] - left_poly[0][0]
+            if width < min_width:
+                min_width = width
+                min_index = i
+
+        # merge the pair
+        left_poly = polygons[min_index]
+        right_poly = polygons[min_index + 1]
+        merged_poly = [
+            (left_poly[0][0], left_poly[0][1]),
+            (right_poly[1][0], right_poly[1][1]),
+            (right_poly[2][0], right_poly[2][1]),
+            (left_poly[3][0], left_poly[3][1]),
+        ]
+
+        # update the list
+        polygons = polygons[:min_index] + [merged_poly] + polygons[min_index + 2 :]
+
+    return polygons
+
+
 def refine_border_polygons(
-    border_polygons: List[List[Tuple[int, int]]], expected_num_segments: int
+    border_polygons: List[List[Tuple[int, int]]],
+    expected_num_segments: int,
+    center_x: float,
 ) -> Tuple[List[List[Tuple[int, int]]], bool]:
     """Refine border polygons based on the expected number of segments.
-    If there are more polygons than expected, merge the smallest closest ones.
+    If there are more polygons than expected, merge to meet the expected number.
     If there are fewer, raise warning.
     If there are fewer or equal, keep as is.
+
+    Merging strategy: polygon(s) near the center should be merged last.
+    - Find polygons on left, middle, right based on center of image,
+    - Merge the middle polygons first into one if possible.
+    - Merge from left and right towards center, left side has higer priority.
+    - Merge the pair of adjacent polygons with the smallest width first.
+
+    Assumption:
+    - Border polygons are non-overlapping and sorted from left to right.
 
     Args:
         border_polygons (List[List[Tuple[int, int]]]): List of border polygons.
         expected_num_segments (int): Expected number of segments (pages).
+        center_x (float): X coordinate of the center of the image.
 
     Returns:
         Tuple[List[List[Tuple[int, int]]], bool]: Refined list of border polygons, and
@@ -224,66 +231,74 @@ def refine_border_polygons(
     """
     if len(border_polygons) < expected_num_segments:
         return border_polygons, True
-
-    if expected_num_segments <= 2:
-        while len(border_polygons) > expected_num_segments:
-            # find the pair of adjacent polygons with the smallest width
-            min_width = float("inf")
-            min_index = -1
-            for i in range(len(border_polygons) - 1):
-                left_poly = border_polygons[i]
-                right_poly = border_polygons[i + 1]
-                width = right_poly[1][0] - left_poly[0][0]
-                if width < min_width:
-                    min_width = width
-                    min_index = i
-
-            # merge the pair
-            left_poly = border_polygons[min_index]
-            right_poly = border_polygons[min_index + 1]
-            merged_poly = [
-                (left_poly[0][0], left_poly[0][1]),
-                (right_poly[1][0], right_poly[1][1]),
-                (right_poly[2][0], right_poly[2][1]),
-                (left_poly[3][0], left_poly[3][1]),
-            ]
-
-            # update the list
-            border_polygons = (
-                border_polygons[:min_index]
-                + [merged_poly]
-                + border_polygons[min_index + 2 :]
-            )
-    else:
-        # find the segment in the middle,
-        # which is the one that overlapps with the center of the image
-        # don't merge this one with others
-        # merge others from left and right towards center
+    elif len(border_polygons) > expected_num_segments:
 
         # find left, middle, and right polygon lists
-        w_left = border_polygons[0][0][0]
-        w_right = border_polygons[-1][1][0]
-        center = (w_left + w_right) // 2
         left_polys = []
         right_polys = []
         middle_poly = []
         for poly in border_polygons:
-            if poly[0][0] <= center <= poly[1][0]:
+            if poly[0][0] < center_x < poly[1][0]:  # center goes through this polygon
                 middle_poly.append(poly)
-            elif poly[1][0] < center:
+            elif poly[1][0] <= center_x:
                 left_polys.append(poly)
             else:
                 right_polys.append(poly)
 
-        # determine max number of merges on each side
-        total_polys = len(border_polygons)
-        num_merges = total_polys - expected_num_segments
-        max_left_merges = len(left_polys)
-        max_right_merges = len(right_polys)
-        left_merges = min(num_merges // 2, max_left_merges)
-        right_merges = min(num_merges - left_merges, max_right_merges)
+        assert len(middle_poly) <= 1, "At most one polygon should cover the center."
 
-        # TODO: continue...
+        # determine expected number of segments on each side
+        num_segs_middle = min(
+            len(middle_poly), 1
+        )  # assume all middle polys can be merged into one
+        num_segs_both_sides = expected_num_segments - num_segs_middle
+
+        if num_segs_both_sides < len(left_polys) + len(right_polys):
+            if not left_polys:
+                num_segs_right = num_segs_both_sides
+                num_segs_left = 0
+            elif not right_polys:
+                num_segs_left = num_segs_both_sides
+                num_segs_right = 0
+            else:
+                # distribute segments on both sides
+                # in case the num_segs_both_sides is an odd number
+                # the side with fewer polygons gets the smaller share
+                num_segs_left = min(
+                    len(left_polys),
+                    num_segs_both_sides // 2
+                    + (
+                        num_segs_both_sides % 2
+                        if len(left_polys) >= len(right_polys)
+                        else 0
+                    ),
+                )
+                num_segs_right = min(
+                    len(right_polys), num_segs_both_sides - num_segs_left
+                )
+        else:
+            # num_segs_both_sides == total segments on both sides
+            # > case is impossible for this setup
+            num_segs_left = len(left_polys)
+            num_segs_right = len(right_polys)
+
+        # merge middle polygons first
+        middle_poly = _merge_polygons(middle_poly, num_segs_middle)
+
+        # merge left polygons
+        left_polys = _merge_polygons(left_polys, num_segs_left)
+
+        # merge right polygons
+        right_polys = _merge_polygons(right_polys, num_segs_right)
+
+        # combine all
+        combined_polys = left_polys + middle_poly + right_polys
+        if len(combined_polys) > expected_num_segments:
+            # final merge if still more than expected
+            # e.g. expected 2 or 1 segment(s) in total
+            border_polygons = _merge_polygons(combined_polys, expected_num_segments)
+        else:
+            border_polygons = combined_polys
 
     return border_polygons, False
 
@@ -339,7 +354,7 @@ def slice_and_save_ocrd(
 
     # refine border polygons to match expected number of segments
     border_polygons, fewer_than_expected = refine_border_polygons(
-        border_polygons, expected_num_segments
+        border_polygons, expected_num_segments, center_x=w / 2.0
     )
 
     # saving
@@ -423,13 +438,6 @@ class SplitPagesProcessor(Processor):
                 page_id,
             )
 
-        # # step 0: get path of the current page image
-        # img_rel_path = page.get_imageFilename()
-        # if not img_rel_path:
-        #     raise RuntimeError(f"No ImageFilename found for page {page_id}.")
-        # img_path = Path(self.workspace.directory) / img_rel_path
-        # self.logger.info(f"Splitting page {page_id} with image {img_path}")
-
         # step 1: use PaddleOCR to detect text
         paddleocr_model = self.parameter.get("paddleocr_model", "PP-OCRv5_server_det")
         device = self.parameter.get("device", "cpu")
@@ -448,12 +456,10 @@ class SplitPagesProcessor(Processor):
         number_breakpoints = self.parameter.get("number_breakpoints", 4)
         close_threshold = self.parameter.get("close_threshold", 3.0)
         fallback_to_center = self.parameter.get("fallback_to_center", True)
-        num_segments = self.parameter.get("num_segments", 2)
         points, fallback, org_bkps = find_split_points(
             signal,
             num_bkps=number_breakpoints,
             close_thres=close_threshold,
-            num_segments=num_segments,
             fallback=fallback_to_center,
         )
 

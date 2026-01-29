@@ -94,7 +94,6 @@ def test_find_split_points(get_img_path):
         signal,
         num_bkps=4,
         close_thres=0.0,
-        num_segments=3,
         fallback=True,
     )
     assert len(split_points) == 2
@@ -102,122 +101,237 @@ def test_find_split_points(get_img_path):
     assert len(org_bkps) == 4
 
 
-def test_no_ocrd_slice_and_save_to_files(get_img_path, tmp_path):
-    in_img, det_polys = sp.get_text_detections_paddleocr(
-        str(get_img_path), ocr_model="PP-OCRv5_server_det", device="cpu"
-    )
-    signal, _ = sp.compute_signal(in_img, det_polys, proj_func=np.mean)
-    split_points, fallback, org_bkps = sp.find_split_points(
-        signal,
-        num_bkps=4,
-        close_thres=0.0,
-        num_segments=3,
-        fallback=True,
-    )
-
-    # save as 3 segments
-    out_dir = tmp_path / "output_images"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    sp.no_ocrd_slice_and_save_to_files(
-        in_img,
-        split_points,
-        out_dir,
-        fname="test_image",
-        unique_tag="test",
-        segment_size=100,
-        jpeg_quality=95,
-    )
-
-    # Check if images are saved
-    saved_files = list(out_dir.glob("test_image_*.jpg"))
-    assert len(saved_files) == 3  # Should save 3 segments
-
-    # save as 2 segments
-    out_dir_2seg = tmp_path / "output_images_2seg"
-    out_dir_2seg.mkdir(parents=True, exist_ok=True)
-
-    sp.no_ocrd_slice_and_save_to_files(
-        in_img,
-        split_points,
-        out_dir_2seg,
-        fname="test_image",
-        unique_tag="test",
-        segment_size=300,
-        jpeg_quality=95,
-    )
-
-    # Check if images are saved
-    saved_files_2seg = list(out_dir_2seg.glob("test_image_*.jpg"))
-    assert len(saved_files_2seg) == 2  # Should save 2 segments
-
-
-def test_refine_border_polygons():
-    # Example border polygons (x, y) coordinates
-    border_polygons = [
+@pytest.fixture()
+def get_polygons():
+    polygons = [
         [(0, 0), (10, 0), (10, 50), (0, 50)],
         [(10, 0), (30, 0), (30, 50), (10, 50)],
         [(30, 0), (35, 0), (35, 50), (30, 50)],
         [(35, 0), (70, 0), (70, 50), (35, 50)],
     ]
+    return polygons
+
+
+def test_merge_polygons_special_cases():
+    with pytest.raises(ValueError):
+        sp._merge_polygons([], -1)
+
+    refined_polys = sp._merge_polygons([], 0)
+    assert refined_polys == []
+
+
+def test_merge_polygons(get_polygons):
 
     # resulting segments are fewer than expected
-    expected_num_segments = len(border_polygons) + 1
+    expected_polygon_num = len(get_polygons) + 1
 
-    refined_polys, fewer_flag = sp.refine_border_polygons(
-        border_polygons, expected_num_segments
-    )
-    assert len(refined_polys) == len(border_polygons)
-    assert fewer_flag is True
+    refined_polys = sp._merge_polygons(get_polygons, expected_polygon_num)
+    assert refined_polys == get_polygons
 
     # resulting segments match expected
-    expected_num_segments = len(border_polygons)
-    refined_polys, fewer_flag = sp.refine_border_polygons(
-        border_polygons, expected_num_segments
-    )
-    assert len(refined_polys) == len(border_polygons)
-    assert fewer_flag is False
+    expected_polygon_num = len(get_polygons)
+    refined_polys = sp._merge_polygons(get_polygons, expected_polygon_num)
+    assert refined_polys == get_polygons
 
     # resulting segments are more than expected
-    expected_num_segments = len(border_polygons) - 1
-    refined_polys, fewer_flag = sp.refine_border_polygons(
-        border_polygons, expected_num_segments
-    )
-    assert len(refined_polys) == expected_num_segments
-    assert refined_polys[0] == border_polygons[0]
+    expected_polygon_num = len(get_polygons) - 1
+    refined_polys = sp._merge_polygons(get_polygons, expected_polygon_num)
+    assert len(refined_polys) == expected_polygon_num
+    assert refined_polys[0] == get_polygons[0]
     assert refined_polys[1] == [
-        border_polygons[1][0],
-        border_polygons[2][1],
-        border_polygons[2][2],
-        border_polygons[1][3],
+        get_polygons[1][0],
+        get_polygons[2][1],
+        get_polygons[2][2],
+        get_polygons[1][3],
     ]
-    assert refined_polys[2] == border_polygons[3]
+    assert refined_polys[2] == get_polygons[3]
+
+    expected_polygon_num = len(get_polygons) - 2
+    refined_polys = sp._merge_polygons(get_polygons, expected_polygon_num)
+    assert len(refined_polys) == expected_polygon_num
+    assert refined_polys[0] == [
+        get_polygons[0][0],
+        get_polygons[2][1],
+        get_polygons[2][2],
+        get_polygons[0][3],
+    ]
+    assert refined_polys[1] == get_polygons[3]
+    # all merged into one
+    expected_polygon_num = 1
+    refined_polys = sp._merge_polygons(get_polygons, expected_polygon_num)
+    assert len(refined_polys) == expected_polygon_num
+    assert refined_polys[0] == [
+        get_polygons[0][0],
+        get_polygons[3][1],
+        get_polygons[3][2],
+        get_polygons[0][3],
+    ]
+
+
+def test_refine_border_polygons_no_middle_two_sides(get_polygons):
+    # Test case where resulting segments are fewer than expected
+    expected_num_segments = len(get_polygons) + 1
+    refined_polys, fewer_flag = sp.refine_border_polygons(
+        get_polygons, expected_num_segments, center_x=35.0
+    )
+    assert refined_polys == get_polygons
+    assert fewer_flag is True
+
+    # Test case where resulting segments match expected
+    expected_num_segments = len(get_polygons)
+    refined_polys, fewer_flag = sp.refine_border_polygons(
+        get_polygons, expected_num_segments, center_x=35.0
+    )
+    assert refined_polys == get_polygons
     assert fewer_flag is False
 
-    expected_num_segments = len(border_polygons) - 2
+    # Test case where resulting segments are more than expected
+    expected_num_segments = len(get_polygons) - 1
     refined_polys, fewer_flag = sp.refine_border_polygons(
-        border_polygons, expected_num_segments
+        get_polygons, expected_num_segments, center_x=35.0
+    )
+    assert len(refined_polys) == expected_num_segments
+    assert refined_polys[0] == get_polygons[0]
+    assert refined_polys[1] == [
+        get_polygons[1][0],
+        get_polygons[2][1],
+        get_polygons[2][2],
+        get_polygons[1][3],
+    ]
+    assert refined_polys[2] == get_polygons[3]
+    assert fewer_flag is False
+
+    expected_num_segments = len(get_polygons) - 2
+    refined_polys, fewer_flag = sp.refine_border_polygons(
+        get_polygons, expected_num_segments, center_x=35.0
     )
     assert len(refined_polys) == expected_num_segments
     assert refined_polys[0] == [
-        border_polygons[0][0],
-        border_polygons[2][1],
-        border_polygons[2][2],
-        border_polygons[0][3],
+        get_polygons[0][0],
+        get_polygons[2][1],
+        get_polygons[2][2],
+        get_polygons[0][3],
     ]
-    assert refined_polys[1] == border_polygons[3]
+    assert refined_polys[1] == get_polygons[3]
     assert fewer_flag is False
 
     # all merged into one
     expected_num_segments = 1
     refined_polys, fewer_flag = sp.refine_border_polygons(
-        border_polygons, expected_num_segments
+        get_polygons, expected_num_segments, center_x=35.0
     )
     assert len(refined_polys) == expected_num_segments
     assert refined_polys[0] == [
-        border_polygons[0][0],
-        border_polygons[3][1],
-        border_polygons[3][2],
-        border_polygons[0][3],
+        get_polygons[0][0],
+        get_polygons[3][1],
+        get_polygons[3][2],
+        get_polygons[0][3],
     ]
     assert fewer_flag is False
+
+
+def test_refine_border_polygons_with_middle(get_polygons):
+    # only check cases where resulting segments are more than expected
+    center_x = 32.0  # goes through the 3rd polygon
+
+    expected_num_segments = len(get_polygons) - 1
+    refined_polys, fewer_flag = sp.refine_border_polygons(
+        get_polygons, expected_num_segments, center_x=center_x
+    )
+    assert len(refined_polys) == expected_num_segments
+    assert refined_polys[0] == [
+        get_polygons[0][0],
+        get_polygons[1][1],
+        get_polygons[1][2],
+        get_polygons[0][3],
+    ]
+    assert refined_polys[1] == get_polygons[2]
+    assert refined_polys[2] == get_polygons[3]
+    assert fewer_flag is False
+
+    expected_num_segments = len(get_polygons) - 2
+    refined_polys, _ = sp.refine_border_polygons(
+        get_polygons, expected_num_segments, center_x=center_x
+    )
+    assert len(refined_polys) == expected_num_segments
+    assert refined_polys[0] == [
+        get_polygons[0][0],
+        get_polygons[2][1],
+        get_polygons[2][2],
+        get_polygons[0][3],
+    ]
+    assert refined_polys[1] == get_polygons[3]
+
+    # all merged into one
+    expected_num_segments = 1
+    refined_polys, _ = sp.refine_border_polygons(
+        get_polygons, expected_num_segments, center_x=center_x
+    )
+    assert len(refined_polys) == expected_num_segments
+    assert refined_polys[0] == [
+        get_polygons[0][0],
+        get_polygons[3][1],
+        get_polygons[3][2],
+        get_polygons[0][3],
+    ]
+
+
+def test_refine_border_polygons_one_side_cases(get_polygons):
+    # these are rare cases where polygons are only on one side of the center
+    center_x = 0.0  # all polygons are on the right side
+    expected_num_segments = len(get_polygons) - 2
+    refined_polys, _ = sp.refine_border_polygons(
+        get_polygons, expected_num_segments, center_x=center_x
+    )
+    assert len(refined_polys) == expected_num_segments
+    assert refined_polys[0] == [
+        get_polygons[0][0],
+        get_polygons[2][1],
+        get_polygons[2][2],
+        get_polygons[0][3],
+    ]
+    assert refined_polys[1] == get_polygons[3]
+
+    center_x = 75.0  # all polygons are on the left side
+    expected_num_segments = len(get_polygons) - 1
+    refined_polys, _ = sp.refine_border_polygons(
+        get_polygons, expected_num_segments, center_x=center_x
+    )
+    assert len(refined_polys) == expected_num_segments
+    assert refined_polys[0] == get_polygons[0]
+    assert refined_polys[1] == [
+        get_polygons[1][0],
+        get_polygons[2][1],
+        get_polygons[2][2],
+        get_polygons[1][3],
+    ]
+    assert refined_polys[2] == get_polygons[3]
+
+    center_x = 5.0  # through the first polygon
+    expected_num_segments = len(get_polygons) - 1
+    refined_polys, _ = sp.refine_border_polygons(
+        get_polygons, expected_num_segments, center_x=center_x
+    )
+    assert len(refined_polys) == expected_num_segments
+    assert refined_polys[0] == get_polygons[0]
+    assert refined_polys[1] == [
+        get_polygons[1][0],
+        get_polygons[2][1],
+        get_polygons[2][2],
+        get_polygons[1][3],
+    ]
+    assert refined_polys[2] == get_polygons[3]
+
+    center_x = 68.0  # through the last polygon
+    expected_num_segments = len(get_polygons) - 2
+    refined_polys, _ = sp.refine_border_polygons(
+        get_polygons, expected_num_segments, center_x=center_x
+    )
+    assert len(refined_polys) == expected_num_segments
+    assert refined_polys[0] == [
+        get_polygons[0][0],
+        get_polygons[2][1],
+        get_polygons[2][2],
+        get_polygons[0][3],
+    ]
+    assert refined_polys[1] == get_polygons[3]
