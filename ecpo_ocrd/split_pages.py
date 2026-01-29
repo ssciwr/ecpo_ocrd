@@ -412,9 +412,9 @@ class SplitPagesProcessor(Processor):
             3) find vertical split points based on the signal
                 3.1) use Dynamic Programming to find vertical breakpoints of significant gaps
                 3.2) find refined points between those breakpoints that their signal near zero (black), i.e. no text there
-                3.3) only consider points near the center to ensure we have num_segments - 1 splits
             4) split into vertical segments at those refined points; always covers full width
-            5) save segments into corresponding output file groups
+            5) merge segments to meet the expected number of segments, if needed
+            6) save segments into corresponding output file groups
         """
         assert input_pcgts
         assert input_pcgts[0]
