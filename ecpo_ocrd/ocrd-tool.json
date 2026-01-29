@@ -19,6 +19,59 @@
       "steps": [
         "evaluation/layout"
       ]
+    },
+    "ocrd-split-pages": {
+      "categories": [
+        "Image preprocessing"
+      ],
+      "description": "Split a page into multiple segments based on gutter detection",
+      "executable": "ocrd-split-pages",
+      "input_file_grp_cardinality": 1,
+      "output_file_grp_cardinality": [1, -1],
+      "parameters": {
+        "paddleocr_model": {
+            "type": "string",
+            "default": "PP-OCRv5_server_det",
+            "description": "PaddleOCR model name for text detection."
+        },
+        "device": {
+            "type": "string",
+            "default": "cpu",
+            "description": "Device to run the OCR model on. e.g. 'cpu', 'gpu', 'gpu:0'."
+        },
+        "proj_func": {
+            "type": "string",
+            "enum": ["mean", "max", "min", "sum"],
+            "default": "mean",
+            "description": "Projection function to use for gutter detection."
+        },
+        "number_breakpoints": {
+            "type": "number",
+            "minimum": 1,
+            "default": 4,
+            "description": "Number of breakpoints (splits) to detect using Dynamic Programming."
+        },
+        "close_threshold": {
+            "type": "number",
+            "minimum": 0.0,
+            "default": 3.0,
+            "description": "Threshold to consider a value close to 'almost gutter'."
+        },
+        "fallback_to_center": {
+            "type": "boolean",
+            "default": true,
+            "description": "If no minima detected, whether to fallback to a single center split (two pages)"
+        },
+        "segment_size": {
+            "type": "number",
+            "minimum": 1,
+            "default": 400,
+            "description": "Minimum width in pixels for a segment to be valid. Segments smaller than this are skipped. Used for cases with text in the gutter."
+        }
+      },
+      "steps": [
+        "preprocessing/optimization/cropping"
+      ]
     }
   },
   "version": "0.0.1"

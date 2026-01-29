@@ -29,6 +29,16 @@ ocrd-cis-ocropy-deskew -I OCR-D-DENOISE -O OCR-D-DESKEW-PAGE -P level-of-operati
 #       in the documentation. Are there GPU-enabled Docker images for OCR-D tools?
 # ocrd-anybaseocr-dewarp -I OCR-D-DESKEW-PAGE -O OCR-D-DEWARP-PAGE
 
+# Step 7: Splitting page into multiple segments based on gutter detection
+# depending on the images, we can split into 2, 3 or even more segments
+# the number of output file groups must match the expected number of segments
+# ocrd-split-pages -I OCR-D-DESKEW-PAGE -O 3-OCR-D-SPLIT-L,3-OCR-D-SPLIT-M,3-OCR-D-SPLIT-R
+# ocrd-split-pages -I OCR-D-DESKEW-PAGE -O 2-OCR-D-SPLIT-L,2-OCR-D-SPLIT-R
+# ocrd-split-pages -I OCR-D-DESKEW-PAGE -O 1-OCR-D-SPLIT
+# anong the parameters of the tool, `close_threshold` is the most interesting one to tune
+# `close_threshold` specifies the threshold at which a value is considered close to "almost gutter"
+ocrd-split-pages -I OCR-D-DESKEW-PAGE -O CONFIG-OCR-D-SPLIT-L,CONFIC-OCR-D-SPLIT-M,CONFIG-OCR-D-SPLIT-R -P close_threshold 3.0
+
 # Step 7: Region segmentation
 # Note: Eynollah does not work for me here, as it does not download one of the required models.
 # ocrd-eynollah-segment -I OCR-D-DESKEW-PAGE -O OCR-D-SEG -P models default
