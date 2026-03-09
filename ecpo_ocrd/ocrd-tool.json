@@ -22,10 +22,10 @@
     },
     "ocrd-eynollah-inference": {
       "categories": [
-        "Quality assurance"
+        "Layout analysis"
       ],
       "description": "Run Eynollah for layout analysis",
-      "executable": "eynollah-training-inference",
+      "executable": "eynollah-training inference",
       "input_file_grp_cardinality": 1,
       "output_file_grp_cardinality": 1,
       "parameters": {
@@ -36,7 +36,7 @@
         }
       },
       "steps": [
-        "evaluation/layout"
+        "layout/segmentation/classification"
       ]
     }
   },

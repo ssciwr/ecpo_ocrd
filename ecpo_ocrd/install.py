@@ -86,6 +86,17 @@ def install(prefix):
         models=["*"],
         additional_packages=["paddlepaddle==3.2.0"],
     )
+    # install_ocrd_tool(
+    #     "eynollah-training",
+    #     package="eynollah[training] @ git+https://github.com/qurator-spk/eynollah.git@main",
+    #     env_identifier="eynollah",
+    # )
+    install_ocrd_tool(
+        "ocrd-eynollah-segment",
+        package="eynollah[OCR] @ git+https://github.com/qurator-spk/eynollah.git@main",
+        env_identifier="eynollah",
+        models=[],
+    )
 
 
 def uninstall(prefix):
