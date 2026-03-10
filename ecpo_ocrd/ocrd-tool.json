@@ -25,13 +25,18 @@
         "Layout analysis"
       ],
       "description": "Run Eynollah for layout analysis",
-      "executable": "eynollah-training inference",
+      "executable": "ocrd-eynollah-inference",
       "input_file_grp_cardinality": 1,
       "output_file_grp_cardinality": 1,
       "parameters": {
-        "model_dir": {
-          "default": false,
+        "model": {
+          "default": "scale-bin",
           "description": "Path to the model directory",
+          "type": "string"
+        },
+        "env_identifier": {
+          "default": "eynollah",
+          "description": "Environment identifier for Eynollah inference (e.g. 'eynollah')",
           "type": "string"
         }
       },

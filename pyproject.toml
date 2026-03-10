@@ -35,6 +35,7 @@ dependencies = [
 [project.scripts]
 ecpo_ocrd = "ecpo_ocrd.__main__:main"
 ocrd-regions-to-labelstudio = "ecpo_ocrd.labelstudio:cli"
+ocrd-eynollah-inference = "ecpo_ocrd.eynollah_inference:cli"
 
 # The following section contains setuptools-specific configuration
 # options. For a full reference of available options, check the overview
