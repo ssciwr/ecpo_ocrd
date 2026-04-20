@@ -36,10 +36,9 @@ ocrd-cis-ocropy-deskew -I OCR-D-DENOISE -O OCR-D-DESKEW-PAGE -P level-of-operati
 # ocrd-eynollah-segment -I OCR-D-DESKEW-PAGE -O OCR-D-SEG -P models default
 ocrd-paddleocr-segment -I OCR-D-IMG -O OCR-D-SEG -P threshold 30 -P layout_merge_bboxes_mode large
 
-# Step 7.2: Try layout segmentation with trained Eynollah model, in progress.
-# The new model_zoo of Eynollah broke the current model path,
-# so further investigation is needed.
-ocrd-eynollah-segment -I OCR-D-IMG -O OCR-D-SEG-EYNOLLAH -P models /home/tuyen/SSC_repos/ecpo-eynollah/data/models/scale-bin
+# Step 7.2: Try layout segmentation with a trained Eynollah model
+# download model with ocrd resmgr download if needed
+ocrd-eynollah-inference -I OCR-D-IMG -O OCR-D-EYNOLLAH -P model eynollah-scale-bin-20260325-artbound-noheadings
 
 # Output visualization
 ocrd-regions-to-labelstudio -I OCR-D-SEG -O OCR-D-LS

@@ -17,6 +17,7 @@ description = "An OCR-D pipeline for ECPO"
 readme = "README.md"
 maintainers = [
     { name = "Dominic Kempf", email = "ssc@uni-heidelberg.de" },
+    { name = "Tuyen Le", email = "ssc@uni-heidelberg.de" },
 ]
 dynamic = ["version"]
 requires-python = ">=3.8"
@@ -35,7 +36,6 @@ dependencies = [
 [project.scripts]
 ecpo_ocrd = "ecpo_ocrd.__main__:main"
 ocrd-regions-to-labelstudio = "ecpo_ocrd.labelstudio:cli"
-ocrd-eynollah-inference = "ecpo_ocrd.eynollah_inference:cli"
 
 # The following section contains setuptools-specific configuration
 # options. For a full reference of available options, check the overview

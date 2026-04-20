@@ -83,20 +83,15 @@ def install(prefix):
     install_ocrd_tool(
         "ocrd-paddleocr-segment",
         package="git+https://github.com/ssciwr/ocrd_paddleocr.git@main",
-        models=[],
+        models=["*"],
         additional_packages=["paddlepaddle==3.2.0"],
     )
     install_ocrd_tool(
-        "eynollah-training",
-        package="eynollah[training] @ git+https://github.com/qurator-spk/eynollah.git@main",
+        "ocrd-eynollah-inference",
+        package="git+https://github.com/ssciwr/ocrd_eynollah.git@main",
         env_identifier="eynollah",
+        models=["*"],
     )
-    # install_ocrd_tool(
-    #     "ocrd-eynollah-segment",
-    #     package="eynollah[OCR] @ git+https://github.com/qurator-spk/eynollah.git@main",
-    #     env_identifier="eynollah",
-    #     models=[],
-    # )
 
 
 def uninstall(prefix):
