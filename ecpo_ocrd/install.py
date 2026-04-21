@@ -83,7 +83,7 @@ def install(prefix):
     install_ocrd_tool(
         "ocrd-paddleocr-segment",
         package="git+https://github.com/ssciwr/ocrd_paddleocr.git@main",
-        models=["*"],
+        models=[],
         additional_packages=["paddlepaddle==3.2.0"],
     )
     install_ocrd_tool(

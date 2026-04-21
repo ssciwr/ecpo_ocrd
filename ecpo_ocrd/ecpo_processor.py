@@ -1,12 +1,9 @@
-# use paddleocr to refine Eynollah's inference results
-# based on the implementation of https://github.com/dokempf/ecpo-new-pipeline
-
-from ocrd import Processor, OcrdPage, OcrdPageResult, OcrdPageResultImage
-from ocrd.decorators import ocrd_cli_options, ocrd_cli_wrap_processor
-
 from typing import Optional
 import click
 from shapely.geometry import Polygon
+
+from ocrd import Processor, OcrdPage, OcrdPageResult, OcrdPageResultImage
+from ocrd.decorators import ocrd_cli_options, ocrd_cli_wrap_processor
 
 
 class ECPOInferenceProcessor(Processor):
