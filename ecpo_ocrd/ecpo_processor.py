@@ -9,7 +9,7 @@ from ocrd import Processor, OcrdPage, OcrdPageResult, OcrdPageResultImage
 from ocrd.decorators import ocrd_cli_options, ocrd_cli_wrap_processor
 from ocrd_models.ocrd_page import AlternativeImageType
 
-from refine import LayoutDetector, crop_polygon, translate, overlay_outline
+from ecpo_ocrd.refine import LayoutDetector, crop_polygon, translate, overlay_outline
 
 
 class ECPOInferenceProcessor(Processor):

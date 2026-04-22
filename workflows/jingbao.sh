@@ -36,9 +36,12 @@ ocrd-cis-ocropy-deskew -I OCR-D-DENOISE -O OCR-D-DESKEW-PAGE -P level-of-operati
 # ocrd-eynollah-segment -I OCR-D-DESKEW-PAGE -O OCR-D-SEG -P models default
 ocrd-paddleocr-segment -I OCR-D-IMG -O OCR-D-SEG -P threshold 30 -P layout_merge_bboxes_mode large
 
-# Step 7.2: Try layout segmentation with a trained Eynollah model
+# Step 7-plus: Try layout segmentation with a trained Eynollah model
 # download model with ocrd resmgr download if needed
 ocrd-eynollah-inference -I OCR-D-IMG -O OCR-D-EYNOLLAH -P model eynollah-scale-bin-20260325-artbound-noheadings
+
+# Step 8: Layout detection refinement with PaddleOCR
+ocrd-ecpo-segment -I OCR-D-EYNOLLAH -O OCR-D-ECPO
 
 # Output visualization
 ocrd-regions-to-labelstudio -I OCR-D-SEG -O OCR-D-LS

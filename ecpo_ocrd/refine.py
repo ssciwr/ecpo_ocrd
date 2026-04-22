@@ -10,7 +10,7 @@ import networkx as nx
 from shapely.ops import unary_union, polygonize
 from shapely.affinity import translate
 import itertools
-from typing import Iterable, Any
+from typing import Iterable, Any, Callable
 
 import paddleocr
 
@@ -140,7 +140,7 @@ def black_content(binary: np.ndarray, poly: Polygon) -> int:
 
 def overlap_threshold_function(
     polys: list[Polygon], threshold: float = 0.9
-) -> callable[[int, int], bool]:
+) -> Callable[[int, int], bool]:
     """Overlap percentage thresholding for two polygons.
 
     Values are always in [0, 1] with 1 for identical polygons.
@@ -156,13 +156,13 @@ def overlap_threshold_function(
 
 
 def filter_redundant_polys(
-    polys: list[Polygon], criterion: callable[[int, int], bool]
+    polys: list[Polygon], criterion: Callable[[int, int], bool]
 ) -> list[Polygon]:
     """Filter polygons that are almost identical with others.
 
     Args:
         polys (list[Polygon]): list of polygons to filter
-        criterion (callable[[int, int], bool]): function that takes two indices i,
+        criterion (Callable[[int, int], bool]): function that takes two indices i,
             j and returns True if polys[i] and polys[j] are considered redundant
             and should be merged, False otherwise
 
@@ -224,7 +224,7 @@ def calculate_atomics(polys: list[Polygon]) -> tuple[list[Polygon], list[list[in
 
 def black_overlap_function(
     binary: np.ndarray, polys: list[Polygon], threshold=0.98
-) -> callable[[int, int], bool]:
+) -> Callable[[int, int], bool]:
     """Overlap percentage of the black pixels of two polygons.
 
     Values are always in [0, 1] with 1 for all black content in the overlap.
@@ -238,7 +238,7 @@ def black_overlap_function(
             based on black pixel overlap
 
     Returns:
-        callable[[int, int], bool]: function that takes two indices i, j and returns
+        Callable[[int, int], bool]: function that takes two indices i, j and returns
             True if the black pixel overlap of polys[i] and polys[j] is above the threshold,
             False otherwise.
     """
@@ -268,7 +268,7 @@ def exact_disjoint_criterion(p: Polygon, q: Polygon) -> bool:
 
 def fuzzy_disjoint_criterion(
     threshold: float = 0.95,
-) -> callable[[Polygon, Polygon], bool]:
+) -> Callable[[Polygon, Polygon], bool]:
     """Two polygons are considered disjoint if their intersection
     is smaller than a certain percentage of the smaller polygon."""
 
@@ -283,7 +283,7 @@ def disjoint_groups(items: Iterable[Any], is_disjoint) -> list[set[Any]]:
 
     Args:
         items (Iterable[Any]): Iterable of items to group
-        is_disjoint (callable[[Any, Any], bool]): function that takes two items,
+        is_disjoint (Callable[[Any, Any], bool]): function that takes two items,
             a and b, and returns True if they are disjoint (i.e. should NOT be in the same group),
             False otherwise
 
@@ -322,7 +322,7 @@ def squaricity(poly: Polygon) -> float:
     return 16 * poly.area / (poly.length * poly.length)
 
 
-def average_squaricity_criterion(polys: list[Polygon]) -> callable[[list[int]], float]:
+def average_squaricity_criterion(polys: list[Polygon]) -> Callable[[list[int]], float]:
     """Sorting criterion for average squaricity for a set of polygons."""
 
     def _average_squaricity_criterion(indices):

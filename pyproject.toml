@@ -5,8 +5,10 @@
 requires = [
     "setuptools >=61",
     "setuptools-ocrd",
+    "scikit-build-core",
+    "pybind11[global]",
 ]
-build-backend = "setuptools.build_meta"
+build-backend = "scikit_build_core.build"
 
 # This section provides general project metadata that is used across
 # a variety of build tools. Notably, the version specified here is the
