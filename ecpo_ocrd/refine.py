@@ -572,19 +572,26 @@ def overlay_outline(
     border_color_image = (52, 152, 219, 255)
 
     # Draw outlines for image polygons (green)
-    _draw_polygons(
-        result["image_polys"], border_color_image, width=4, fill_color=fill_color_image
-    )
+    if "image_polys" in result:
+        _draw_polygons(
+            result["image_polys"],
+            border_color_image,
+            width=4,
+            fill_color=fill_color_image,
+        )
+
     # Draw outlines for text polygons (red)
-    _draw_polygons(
-        result["text_polys"], border_color_text, width=4, fill_color=fill_color_text
-    )
+    if "text_polys" in result:
+        _draw_polygons(
+            result["text_polys"], border_color_text, width=4, fill_color=fill_color_text
+        )
     # Draw outlines for heading polygons (orange)
-    _draw_polygons(
-        result["heading_polys"],
-        border_color_heading,
-        width=4,
-        fill_color=fill_color_heading,
-    )
+    if "heading_polys" in result:
+        _draw_polygons(
+            result["heading_polys"],
+            border_color_heading,
+            width=4,
+            fill_color=fill_color_heading,
+        )
 
     return image

@@ -34,7 +34,7 @@ class ECPOInferenceProcessor(Processor):
         """
         assert input_pcgts
         assert input_pcgts[0]
-        assert self.parameter  # default values or from CLI with -p or -P
+        # assert self.parameter  # default values or from CLI with -p or -P
 
         pcgts = input_pcgts[0]
         result = OcrdPageResult(pcgts)
@@ -55,7 +55,9 @@ class ECPOInferenceProcessor(Processor):
         polygons = []
         for region in filtered_text_regions:
             points = region.get_Coords().get_points()
-            polygon = Polygon(points)
+            # parse "x,y x,y ..." into [(x, y), (x, y), ...]
+            coords = [tuple(map(int, p.split(","))) for p in points.split()]
+            polygon = Polygon(coords)
             polygons.append(polygon)
 
         polygons = list(reversed(sorted(polygons, key=lambda p: p.area)))
@@ -82,9 +84,7 @@ class ECPOInferenceProcessor(Processor):
             comments="Refine Eynollah layout detection with PaddleOCR",
         )
         page.add_AlternativeImage(alt_img)
-        result.images.append(
-            OcrdPageResultImage(np.array(overlayed_img), "refined", alt_img)
-        )
+        result.images.append(OcrdPageResultImage(overlayed_img, "refined", alt_img))
 
         return result
 
