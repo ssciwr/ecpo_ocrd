@@ -6,8 +6,15 @@ from PIL import Image, ImageDraw
 import numpy as np
 import math
 from skimage.filters import threshold_otsu
+import networkx as nx
+from shapely.ops import unary_union, polygonize
+from shapely.affinity import translate
+import itertools
+from typing import Iterable, Any
 
 import paddleocr
+
+import _cover_heuristic
 
 
 def rasterize_polygon_to_mask(
@@ -131,6 +138,199 @@ def black_content(binary: np.ndarray, poly: Polygon) -> int:
     return np.sum(mask_cropped & (cropped_img == 0))
 
 
+def overlap_threshold_function(
+    polys: list[Polygon], threshold: float = 0.9
+) -> callable[[int, int], bool]:
+    """Overlap percentage thresholding for two polygons.
+
+    Values are always in [0, 1] with 1 for identical polygons.
+    """
+
+    def _func(i, j):
+        return (
+            polys[i].intersection(polys[j]).area / polys[i].union(polys[j]).area
+            > threshold
+        )
+
+    return _func
+
+
+def filter_redundant_polys(
+    polys: list[Polygon], criterion: callable[[int, int], bool]
+) -> list[Polygon]:
+    """Filter polygons that are almost identical with others.
+
+    Args:
+        polys (list[Polygon]): list of polygons to filter
+        criterion (callable[[int, int], bool]): function that takes two indices i,
+            j and returns True if polys[i] and polys[j] are considered redundant
+            and should be merged, False otherwise
+
+    Returns:
+        list[Polygon]: list of polygons after merging redundant ones
+    """
+    # use networkx UnionFind to build a graph implicitly
+    uf = nx.utils.UnionFind(polys)
+
+    for i, p in enumerate(polys):
+        for j, q in enumerate(polys):
+            if i < j:
+                if criterion(i, j):
+                    uf.union(
+                        p, q
+                    )  # find connected components with criterion as edge condition
+
+    # merge polygons in the same connected component by unary_union
+    return [unary_union(list(s)) for s in uf.to_sets()]
+
+
+def calculate_atomics(polys: list[Polygon]) -> tuple[list[Polygon], list[list[int]]]:
+    """Given a number of polygons, calculate the set of composing atomics.
+
+    A set of atomics for a set of polygons is defined such that every
+    polygon is the disjoint union of a subset of the atomics. Allows
+    for additive calculations without resorting to geometry calculations
+    every time.
+
+    Args:
+        polys (list[Polygon]): list of polygons to calculate atomics for
+
+    Returns:
+        tuple[list[Polygon], list[list[int]]]: a tuple of (atomics, poly_atomics) where:
+            - atomics is a list of Polygons that are the atomic components of the input polygons
+            - poly_atomics is a list of lists,
+                where poly_atomics[i] is the list of indices of atomics that compose polys[i]
+    """
+    # Create all atomics as polygons
+    boundaries = [p.boundary for p in polys if not p.is_empty]
+    merged = unary_union(boundaries)
+    atomics = list(polygonize(merged))
+
+    # For each atomic, find out which polygons it belongs to
+    atomic_covers = []
+    for cell in atomics:
+        pt = cell.representative_point()
+        covered = [i for i, p in enumerate(polys) if p.covers(pt)]
+        atomic_covers.append(covered)
+
+    # Invert that mapping: Which atomics compose each polygon
+    poly_atomics = [[] for p in polys]
+    for i, ac in enumerate(atomic_covers):
+        for p in ac:
+            poly_atomics[p].append(i)
+
+    return atomics, poly_atomics
+
+
+def black_overlap_function(
+    binary: np.ndarray, polys: list[Polygon], threshold=0.98
+) -> callable[[int, int], bool]:
+    """Overlap percentage of the black pixels of two polygons.
+
+    Values are always in [0, 1] with 1 for all black content in the overlap.
+    This would essentially mean that we can pick any polygon without losing
+    anything.
+
+    Args:
+        binary (np.ndarray): binarized image of shape (H, W)
+        polys (list[Polygon]): list of polygons to calculate black overlaps for
+        threshold (float): threshold for considering two polygons redundant
+            based on black pixel overlap
+
+    Returns:
+        callable[[int, int], bool]: function that takes two indices i, j and returns
+            True if the black pixel overlap of polys[i] and polys[j] is above the threshold,
+            False otherwise.
+    """
+
+    atomics, poly_atomics = calculate_atomics(polys)
+    atomics_values = [black_content(binary, a) for a in atomics]
+
+    def _func(i, j):
+        seti = set(poly_atomics[i])
+        setj = set(poly_atomics[j])
+        intersection = seti.intersection(setj)
+        union = seti.union(setj)
+
+        return (
+            sum((atomics_values[i] for i in intersection), 0)
+            / sum((atomics_values[i] for i in union), 0)
+            > threshold
+        )
+
+    return _func
+
+
+def exact_disjoint_criterion(p: Polygon, q: Polygon) -> bool:
+    """True if two polygons are disjoint"""
+    return p.intersection(q).area == 0
+
+
+def fuzzy_disjoint_criterion(
+    threshold: float = 0.95,
+) -> callable[[Polygon, Polygon], bool]:
+    """Two polygons are considered disjoint if their intersection
+    is smaller than a certain percentage of the smaller polygon."""
+
+    def _func(p, q):
+        return p.intersection(q).area < threshold * min(p.area, q.area)
+
+    return _func
+
+
+def disjoint_groups(items: Iterable[Any], is_disjoint) -> list[set[Any]]:
+    """Find groups of items that are not disjoint from each other.
+
+    Args:
+        items (Iterable[Any]): Iterable of items to group
+        is_disjoint (callable[[Any, Any], bool]): function that takes two items,
+            a and b, and returns True if they are disjoint (i.e. should NOT be in the same group),
+            False otherwise
+
+    Returns:
+        list[set[Any]]: list of sets, each set contains items that are NOT disjoint from each other
+    """
+    uf = nx.utils.UnionFind(items)
+
+    # Merge pairs that are NOT disjoint
+    for a, b in itertools.combinations(items, 2):
+        if not is_disjoint(a, b):
+            uf.union(a, b)
+
+    return list(uf.to_sets())
+
+
+def intersection_edges(polys: list[Polygon]) -> list[tuple[int, int]]:
+    """Calculate the intersection graph for a set of polygons."""
+
+    edges = []
+    for i, p in enumerate(polys):
+        for j, q in enumerate(polys):
+            if i != j:
+                if not exact_disjoint_criterion(p, q):
+                    # if not disjoint_criterion(p, q):
+                    edges.append((i, j))
+
+    return edges
+
+
+def squaricity(poly: Polygon) -> float:
+    """A measure for how square-like a polygon is.
+
+    Values are always in [0, 1] with 1 is an actual square.
+    """
+    return 16 * poly.area / (poly.length * poly.length)
+
+
+def average_squaricity_criterion(polys: list[Polygon]) -> callable[[list[int]], float]:
+    """Sorting criterion for average squaricity for a set of polygons."""
+
+    def _average_squaricity_criterion(indices):
+        return sum((squaricity(polys[i]) for i in indices), 0.0) / len(indices)
+
+    return _average_squaricity_criterion
+
+
 class LayoutDetector:
     def _poor_mans_defaultdict(
         self, default: float, args: dict[int, float]
@@ -179,7 +379,37 @@ class LayoutDetector:
         return ((img > thr) * 255).astype(np.uint8)
 
     def impl_layout_detection(self, img: np.ndarray, text_threshold: float = 0.05):
-        """TODO: docstring"""
+        """Implementation of the layout detection algorithm.
+        Goal: Find a set of polygons that cover the text boxes with
+        minimal redundancy and good squaricity.
+
+        Algorithm outline:
+        1. Run the PaddleOCR layout detection to get initial text boxes.
+        2. Convert text boxes to polygons
+            and filter out those with too little black content or too overlapping ones.
+        3. If there are disjoint groups of polygons,
+            apply the algorithm recursively to each group (divide and conquer).
+        4. At this point, all polygons are connected. If there are too many polygons (> 20),
+            increase the threshold and restart the algorithm to get fewer polygons.
+        5. Calculate the atomic polygons and their black content,
+            and run a brute-force algorithm to find the optimal cover
+            of the text boxes with a certain threshold.
+        6. Among multiple optimal covers, select the one with the highest
+            average squaricity of the resulting polygons.
+        7. Return the union of polygons in each group as the final detected text polygons.
+
+        Args:
+            img (np.ndarray): input image. In this project, the image is cropped
+                to the bounding box of the original Eynollah polygon, but it can be any image.
+            text_threshold (float): threshold for filtering text boxes based on their confidence score.
+                Higher threshold means fewer boxes and less redundancy,
+                    but also higher risk of missing text.
+                This is a parameter for the PaddleOCR layout detection,
+                    and we can increase it if we find too many polygons in step 4.
+
+        Returns:
+            list[Polygon]: list of detected text polygons in the image.
+        """
         # Run the PaddleOCR layout detection
         layout = self.detector.predict(
             img,
@@ -234,7 +464,7 @@ class LayoutDetector:
             # Recursively call this function for each group and combine the results
             results = []
             for cimg, _, (xoff, yoff) in crops:
-                for cpoly in impl_layout_detection(cimg):
+                for cpoly in self.impl_layout_detection(cimg):
                     results.append(translate(cpoly, xoff=xoff, yoff=yoff))
 
             return results
@@ -248,7 +478,7 @@ class LayoutDetector:
             print(
                 f"Restarting algorithm (found {len(text_polys)} polygons) with threshold {text_threshold + 0.01}"
             )
-            return impl_layout_detection(img, text_threshold=text_threshold + 0.01)
+            return self.impl_layout_detection(img, text_threshold=text_threshold + 0.01)
 
         # As a preparation, we build some data structures
         atomics, poly_atomics = calculate_atomics(text_polys)
@@ -284,7 +514,15 @@ class LayoutDetector:
         return [unary_union(list(g)) for g in groups]
 
     def layout_detection(self, img: np.ndarray) -> list[Polygon]:
-        """Entry point for full layout detection."""
+        """Entry point for full layout detection.
+
+        Args:
+            img (np.ndarray): input image. In this project, the image is cropped
+                to the bounding box of the original Eynollah polygon, but it can be any image.
+
+        Returns:
+            list[Polygon]: list of detected text polygons in the image.
+        """
 
         # Binarize once in the beginning.
         binarized = self.otsu_binarization(img)
@@ -292,3 +530,61 @@ class LayoutDetector:
         # Dispatch to an impl function, as this function might be called recursively
         # with additional parameters.
         return self.impl_layout_detection(binarized)
+
+
+def overlay_outline(
+    image: Image.Image, result: dict[str, list[Polygon]]
+) -> Image.Image:
+    """ "Overlay the detected polygons on the original image for visualization.
+
+    Args:
+        image (Image.Image): original image to overlay on
+        result (dict[str, list[Polygon]]): dictionary containing the detected polygons,
+            with keys "text_polys", "heading_polys", and "image_polys"
+
+    Returns:
+        Image.Image: image with overlaid polygons.
+    """
+    if not isinstance(image, Image.Image):
+        image = Image.open(image)
+    image = image.convert("RGB")
+    draw = ImageDraw.Draw(image, "RGBA")
+
+    def _draw_polygons(polys, line_color, width=4, fill_color=None):
+        for poly in polys:
+            if isinstance(poly, MultiPolygon):
+                poly_iter = poly.geoms
+            else:
+                poly_iter = [poly]
+
+            for p in poly_iter:
+                # Draw only the outline of the polygon
+                draw.polygon(
+                    p.exterior.coords, outline=line_color, width=width, fill=fill_color
+                )
+
+    # fill color with alpha for better visualization of overlaps
+    fill_color_text = (231, 76, 60, 77)
+    border_color_text = (231, 76, 60, 255)
+    fill_color_heading = (230, 126, 34, 77)
+    border_color_heading = (230, 126, 34, 255)
+    fill_color_image = (52, 152, 219, 77)
+    border_color_image = (52, 152, 219, 255)
+
+    # Draw outlines for image polygons (green)
+    _draw_polygons(
+        result["image_polys"], border_color_image, width=4, fill_color=fill_color_image
+    )
+    # Draw outlines for text polygons (red)
+    _draw_polygons(
+        result["text_polys"], border_color_text, width=4, fill_color=fill_color_text
+    )
+    # Draw outlines for heading polygons (orange)
+    _draw_polygons(
+        result["heading_polys"],
+        border_color_heading,
+        width=4,
+        fill_color=fill_color_heading,
+    )
+
+    return image
