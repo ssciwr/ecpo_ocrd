@@ -1,7 +1,7 @@
 # use paddleocr to refine Eynollah's inference results
 # based on the implementation of https://github.com/dokempf/ecpo-new-pipeline
 
-from shapely.geometry import Polygon, MultiPolygon
+from shapely.geometry import Polygon, MultiPolygon, GeometryCollection
 from PIL import Image, ImageDraw
 import numpy as np
 import math
@@ -532,6 +532,25 @@ class LayoutDetector:
         return self.impl_layout_detection(binarized)
 
 
+def flatten_polys(poly):
+    if poly.is_empty:
+        return []
+
+    if isinstance(poly, Polygon):
+        return [poly]
+
+    if isinstance(poly, MultiPolygon):
+        return list(poly.geoms)
+
+    if isinstance(poly, GeometryCollection):
+        result = []
+        for g in poly.geoms:
+            result.extend(flatten_polys(g))
+        return result
+
+    return []  # ignore other geometry types
+
+
 def overlay_outline(
     image: Image.Image, result: dict[str, list[Polygon]]
 ) -> Image.Image:
@@ -540,11 +559,14 @@ def overlay_outline(
     Args:
         image (Image.Image): original image to overlay on
         result (dict[str, list[Polygon]]): dictionary containing the detected polygons,
-            with keys "text_polys", "heading_polys", and "image_polys"
+            with possible keys:
+                "artificial_boundary", "text", "image", "heading", and "separator"
 
     Returns:
         Image.Image: image with overlaid polygons.
     """
+    # TODO: refactor this function
+
     if not isinstance(image, Image.Image):
         image = Image.open(image)
     image = image.convert("RGB")
@@ -552,10 +574,7 @@ def overlay_outline(
 
     def _draw_polygons(polys, line_color, width=4, fill_color=None):
         for poly in polys:
-            if isinstance(poly, MultiPolygon):
-                poly_iter = poly.geoms
-            else:
-                poly_iter = [poly]
+            poly_iter = flatten_polys(poly)
 
             for p in poly_iter:
                 # Draw only the outline of the polygon
@@ -564,34 +583,53 @@ def overlay_outline(
                 )
 
     # fill color with alpha for better visualization of overlaps
+    fill_color_artificial_boundary = (0, 204, 0, 77)
+    border_color_artificial_boundary = (0, 204, 0, 255)
     fill_color_text = (231, 76, 60, 77)
     border_color_text = (231, 76, 60, 255)
-    fill_color_heading = (230, 126, 34, 77)
-    border_color_heading = (230, 126, 34, 255)
     fill_color_image = (52, 152, 219, 77)
     border_color_image = (52, 152, 219, 255)
+    fill_color_heading = (230, 126, 34, 77)
+    border_color_heading = (230, 126, 34, 255)
+    fill_color_separator = (155, 89, 182, 77)
+    border_color_separator = (155, 89, 182, 255)
 
-    # Draw outlines for image polygons (green)
-    if "image_polys" in result:
+    # Draw outlines for artificial boundary polygons (green)
+    if "artificial_boundary" in result:
         _draw_polygons(
-            result["image_polys"],
+            result["artificial_boundary"],
+            border_color_artificial_boundary,
+            width=4,
+            fill_color=fill_color_artificial_boundary,
+        )
+    # Draw outlines for text polygons (red)
+    if "text" in result:
+        _draw_polygons(
+            result["text"], border_color_text, width=4, fill_color=fill_color_text
+        )
+    # Draw outlines for image polygons (blue)
+    if "image" in result:
+        _draw_polygons(
+            result["image"],
             border_color_image,
             width=4,
             fill_color=fill_color_image,
         )
-
-    # Draw outlines for text polygons (red)
-    if "text_polys" in result:
+    # Draw outlines for heading polygons (yellow)
+    if "heading" in result:
         _draw_polygons(
-            result["text_polys"], border_color_text, width=4, fill_color=fill_color_text
-        )
-    # Draw outlines for heading polygons (orange)
-    if "heading_polys" in result:
-        _draw_polygons(
-            result["heading_polys"],
+            result["heading"],
             border_color_heading,
             width=4,
             fill_color=fill_color_heading,
+        )
+    # Draw outlines for separator polygons (purple)
+    if "separator" in result:
+        _draw_polygons(
+            result["separator"],
+            border_color_separator,
+            width=4,
+            fill_color=fill_color_separator,
         )
 
     return image

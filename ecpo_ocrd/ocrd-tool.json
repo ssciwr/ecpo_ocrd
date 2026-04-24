@@ -28,7 +28,13 @@
       "executable": "ocrd-ecpo-segment",
       "input_file_grp_cardinality": 1,
       "output_file_grp_cardinality": 1,
-      "parameters": {},
+      "parameters": {
+        "labels": {
+          "default": ["text"],
+          "description": "Which region labels to refine. Possible values include 'text', 'heading', 'image', 'artificial_boundary', and 'separator'. Use 'all' to select all labels.",
+          "type": "array"
+        }
+      },
       "steps": [
         "layout/segmentation/region"
       ]
