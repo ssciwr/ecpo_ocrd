@@ -25,6 +25,8 @@ from ecpo_ocrd.refine import (
     flatten_polys,
 )
 
+import logging
+
 
 region_mapping = {
     # label: (subtype, region type, region label)
@@ -191,38 +193,76 @@ class ECPOInferenceProcessor(Processor):
             selected_regions = getattr(page, f"get_{region_type_name}")()
             # text and heading have the same class type, filter if needed
             if subtype:
-                selected_regions = [
+                sub_selected_regions = [
                     r for r in selected_regions if r.get_type() == subtype
                 ]
+                un_sub_selected_regions = [
+                    r for r in selected_regions if r.get_type() != subtype
+                ]
+            else:
+                sub_selected_regions = selected_regions
+                un_sub_selected_regions = []
 
-            refined_polys = self._refine_regions(img_arr, selected_regions)
+            # draw debug image if level is DEBUG
+            if self.logger.isEnabledFor(logging.DEBUG):
+                # draw extracted polygons on the original image for debugging
+                selected_polygons = self._convert_ocrd_regions_to_polygons(
+                    sub_selected_regions
+                )
+                debug_img = overlay_outline(
+                    Image.fromarray(img_arr), {label: selected_polygons}
+                )
+                debug_alt_img = AlternativeImageType(
+                    comments=f"Debug image with extracted {label} regions overlayed",
+                )
+                page.add_AlternativeImage(debug_alt_img)
+                result.images.append(
+                    OcrdPageResultImage(
+                        debug_img, f"debug_extracted_{label}", debug_alt_img
+                    )
+                )
 
+            refined_polys = self._refine_regions(img_arr, sub_selected_regions)
+            self.logger.debug(f"Refined {len(refined_polys)} {label} regions.")
+
+            # save the refined polygons to PAGE XML
             if refined_polys:
                 overlayed_polys[label] = refined_polys
 
                 # update PAGE XML with the refined regions
                 getattr(page, f"set_{region_type_name}")(
-                    []
-                )  # clear existing regions of this type
-                for i, poly in enumerate(refined_polys):
+                    un_sub_selected_regions
+                )  # clear existing regions of this type and subtype
+
+                refined_idx = 0
+                for poly in refined_polys:
                     poly_iter = flatten_polys(poly)
 
                     for p in poly_iter:
                         points = points_from_polygon(p.exterior.coords)
                         new_region = region_type_cls(
-                            id=f"refined_{label}_region_{i+1}",
+                            id=f"region_{refined_idx+1}_refined_{label}",
                             Coords=CoordsType(points=points),
                         )
+                        if subtype and hasattr(new_region, "set_type"):
+                            new_region.set_type(subtype)
+
                         getattr(page, f"add_{region_type_name}")(new_region)
 
                         for h in p.interiors:
                             hole_points = points_from_polygon(h.coords)
                             hole_region = region_type_cls(
-                                id=f"refined_{label}_region_{i+1}_hole",
+                                id=f"region_{refined_idx+1}_refined_{label}_hole",
                                 Coords=CoordsType(points=hole_points),
                             )
+                            if subtype and hasattr(hole_region, "set_type"):
+                                hole_region.set_type(subtype)
+
                             getattr(page, f"add_{region_type_name}")(hole_region)
 
+                        refined_idx += 1
+
+        # display refined regions overlayed on the original image
         overlayed_img = overlay_outline(Image.fromarray(img_arr), overlayed_polys)
 
         # record alternative image with overlayed text regions
@@ -231,6 +271,46 @@ class ECPOInferenceProcessor(Processor):
         )
         page.add_AlternativeImage(alt_img)
         result.images.append(OcrdPageResultImage(overlayed_img, "refined", alt_img))
+
+        # draw saved polygons for debugging
+        if self.logger.isEnabledFor(logging.DEBUG):
+            for label in self.labels:
+                if label not in region_mapping:
+                    continue
+                # extract the saved polygons for debugging
+                subtype, region_type_cls, region_type_name = region_mapping[label]
+                after_re_regions = getattr(page, f"get_{region_type_name}")()
+                # text and heading have the same class type, filter if needed
+                if subtype:
+                    after_re_regions = [
+                        r for r in after_re_regions if r.get_type() == subtype
+                    ]
+
+                self.logger.debug(
+                    f"After refinement, there are {len(after_re_regions)} {label} regions stored in PAGE XML."
+                )
+
+                after_re_polys = self._convert_ocrd_regions_to_polygons(
+                    after_re_regions
+                )
+                self.logger.debug(
+                    f"After refinement, there are {len(after_re_polys)} {label} polygons extracted from PAGE XML."
+                )
+
+                debug_after_re_img = overlay_outline(
+                    Image.fromarray(img_arr), {label: after_re_polys}
+                )
+                debug_after_re_alt_img = AlternativeImageType(
+                    comments=f"Debug image with refined {label} regions overlayed",
+                )
+                page.add_AlternativeImage(debug_after_re_alt_img)
+                result.images.append(
+                    OcrdPageResultImage(
+                        debug_after_re_img,
+                        f"debug_refined_{label}",
+                        debug_after_re_alt_img,
+                    )
+                )
 
         return result
 
