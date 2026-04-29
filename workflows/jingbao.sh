@@ -46,4 +46,4 @@ ocrd-eynollah-inference -I OCR-D-IMG -O OCR-D-EYNOLLAH -P model eynollah-scale-b
 ocrd-ecpo-segment -I OCR-D-EYNOLLAH -O OCR-D-ECPO -p '{"labels": ["text"]}'
 
 # Output visualization
-ocrd-regions-to-labelstudio -I OCR-D-SEG -O OCR-D-LS
+ocrd-regions-to-labelstudio -I OCR-D-ECPO -O OCR-D-LS-ECPO
