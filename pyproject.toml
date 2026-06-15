@@ -31,9 +31,12 @@ classifiers = [
 ]
 dependencies = [
     "click",
-    "ocrd",
+    "ocrd==3.3.0",
     "tqdm",
     "scikit-image",
+    "gdown==5.2.0",
+    "numpy<1.24.0",
+    "tensorflow<2.13",
 ]
 
 [project.scripts]

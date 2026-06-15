@@ -74,8 +74,11 @@ def install(prefix):
     install_ocrd_tool("ocrd-segment-extract-regions", package="ocrd_segment")
     install_ocrd_tool("ocrd-skimage-denoise-raw", package="ocrd_wrap")
     install_ocrd_tool("ocrd-skimage-normalize", package="ocrd_wrap")
-    install_ocrd_tool(
-        "ocrd-sbb-binarize", package="eynollah", env_identifier="eynollah", models=["*"]
+    install_ocrd_tool(# this will use Eynollah 0.6.0 with our customized inference colors, Eynollah 0.7.0 creates tf_keras error
+        "ocrd-sbb-binarize", 
+        package="git+https://github.com/kimlee87/eynollah.git@new_inference_color", 
+        env_identifier="eynollah", 
+        models=["*"]
     )
     install_ocrd_tool("ocrd-cis-ocropy-denoise", package="ocrd_cis")
     install_ocrd_tool("ocrd-cis-ocropy-deskew", package="ocrd_cis")
