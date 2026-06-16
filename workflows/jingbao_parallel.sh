@@ -47,7 +47,7 @@ export MKL_NUM_THREADS=1
 
 
 # --- collect pages ---
-PAGES=$(ocrd workspace -d "$WS" -U "$SOCK" find -k files -m "image/*")
+PAGES=$(ocrd workspace -d "$WS" -U "$SOCK" find -k pageId)
 
 echo "Found pages:"
 echo "$PAGES"
@@ -94,4 +94,4 @@ export WS METS SOCK
 
 
 # --- SAFE PARALLEL EXECUTION (2 workers) ---
-printf "%s\n" $PAGES | parallel -j 2 process_page
+printf "%s\n" $PAGES | xargs -n 1 -P 2 -I {} bash -c 'process_page "$@"' _ {}
