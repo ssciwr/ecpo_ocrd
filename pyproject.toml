@@ -34,6 +34,7 @@ dependencies = [
     "ocrd==3.3.0",
     "tqdm",
     "scikit-image",
+    "gdown==5.2.0",
     "numpy<1.24.0",
 ]
 
