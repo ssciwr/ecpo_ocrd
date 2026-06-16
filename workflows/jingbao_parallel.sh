@@ -45,8 +45,6 @@ export CUDA_VISIBLE_DEVICES=0
 
 # processor name should exclude prefix "ocrd-" since ocrd.core will add it back when looking up the processor class
 # e.g. "eynollah-inference" instead of "ocrd-eynollah-inference"
-ocrd process -m "$METS" -U "$SOCK" \
-'eynollah-inference -I OCR-D-IMG -O OCR-D-EYNOLLAH -P model eynollah-scale-bin-20260325-artbound-noheadings'
+ocrd-eynollah-inference -m "$METS" -U "$SOCK" -I OCR-D-IMG -O OCR-D-EYNOLLAH -P model eynollah-scale-bin-20260325-artbound-noheadings
 
-ocrd process -m "$METS" -U "$SOCK" \
-'ecpo-segment -I OCR-D-EYNOLLAH -O OCR-D-ECPO'
+ocrd-ecpo-segment -m "$METS" -U "$SOCK" -I OCR-D-EYNOLLAH -O OCR-D-ECPO
