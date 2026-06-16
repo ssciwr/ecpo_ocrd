@@ -1,4 +1,4 @@
-# solution from codex on ocrd-core and ChatGPT
+# solution from codex on ocrd-core
 WS=/mnt/data/tle/ocrd_workspace_test
 METS="$WS/mets.xml"
 SOCK=/tmp/ocrd-mets-$$.sock
@@ -38,60 +38,15 @@ if [ ! -S "$SOCK" ]; then
     exit 1
 fi
 
-# --- safety settings for GPU + OCR-D ---
-# Eynollah inference failed when OCRD_MAX_PARALLEL_PAGES > 1
-export OCRD_MAX_PARALLEL_PAGES=1
+# eynollah inference failed when this was > 1
+export OCRD_MAX_PARALLEL_PAGES=2
+
 export CUDA_VISIBLE_DEVICES=0
-export OMP_NUM_THREADS=1
-export MKL_NUM_THREADS=1
 
+# processor name should exclude prefix "ocrd-" since ocrd.core will add it back when looking up the processor class
+# e.g. "eynollah-inference" instead of "ocrd-eynollah-inference"
+ocrd process -m "$METS" -U "$SOCK" \
+'eynollah-inference -I OCR-D-IMG -O OCR-D-EYNOLLAH -P model eynollah-scale-bin-20260325-artbound-noheadings'
 
-# --- collect pages ---
-PAGES=$(ocrd workspace -d "$WS" -U "$SOCK" find -k pageId)
-
-echo "Found pages:"
-echo "$PAGES"
-
-
-# --- per-page pipeline function ---
-process_page () {
-    PAGE="$1"
-
-    echo "====================================="
-    echo "Processing page: $PAGE"
-    echo "====================================="
-
-    # 1) Eynollah inference
-    ocrd process -m "$METS" -U "$SOCK" \
-        "eynollah-inference \
-            -I OCR-D-IMG \
-            -O OCR-D-EYNOLLAH \
-            -p $PAGE \
-            -P model eynollah-scale-bin-20260325-artbound-noheadings"
-
-    if [ $? -ne 0 ]; then
-        echo "Eynollah failed on $PAGE"
-        return 1
-    fi
-
-    # 2) ECPO segmentation
-    ocrd process -m "$METS" -U "$SOCK" \
-        "ecpo-segment \
-            -I OCR-D-EYNOLLAH \
-            -O OCR-D-ECPO \
-            -p $PAGE"
-
-    if [ $? -ne 0 ]; then
-        echo "ECPO failed on $PAGE"
-        return 1
-    fi
-
-    echo "Done page: $PAGE"
-}
-
-export -f process_page
-export WS METS SOCK
-
-
-# --- SAFE PARALLEL EXECUTION (2 workers) ---
-printf "%s\n" $PAGES | xargs -n 1 -P 2 -I {} bash -c 'process_page "$@"' _ {}
+ocrd process -m "$METS" -U "$SOCK" \
+'ecpo-segment -I OCR-D-EYNOLLAH -O OCR-D-ECPO'
