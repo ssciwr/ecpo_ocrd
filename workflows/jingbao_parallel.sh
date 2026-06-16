@@ -14,6 +14,30 @@ cleanup() {
 
 trap cleanup EXIT
 
+# Wait until the Unix socket is actually created
+echo "Waiting for METS server socket: $SOCK"
+
+for i in $(seq 1 100); do
+    if [ -S "$SOCK" ]; then
+        echo "METS server ready"
+        break
+    fi
+
+    # Fail early if the server died during startup
+    if ! kill -0 "$METS_SERVER_PID" 2>/dev/null; then
+        echo "METS server exited unexpectedly"
+        exit 1
+    fi
+
+    sleep 0.1
+done
+
+# Verify readiness
+if [ ! -S "$SOCK" ]; then
+    echo "Timed out waiting for METS server socket"
+    exit 1
+fi
+
 export OCRD_MAX_PARALLEL_PAGES=5
 
 CUDA_VISIBLE_DEVICES=0 \
