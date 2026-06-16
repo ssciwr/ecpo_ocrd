@@ -1,0 +1,8 @@
+{
+  "json.schemas": [
+    {
+      "fileMatch": ["ecpo_ocrd/ocrd-tool.json"],
+      "url": "./.vscode/ocrd_tool.schema.json"
+    }
+  ]
+}

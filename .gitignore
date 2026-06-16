@@ -1,3 +1,6 @@
+# Fetched OCRD schema
+.vscode/ocrd_tool.schema.json
+
 bin
 envs
 workspaces
