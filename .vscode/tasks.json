@@ -1,0 +1,14 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Fetch OCR-D tool schema",
+      "type": "shell",
+      "command": "python -c \"import json, urllib.request, yaml; url='https://raw.githubusercontent.com/OCR-D/core/refs/heads/master/src/ocrd_validators/ocrd_tool.schema.yml'; data=yaml.safe_load(urllib.request.urlopen(url).read()); open('.vscode/ocrd_tool.schema.json','w').write(json.dumps(data, indent=2))\"",
+      "problemMatcher": [],
+      "runOptions": {
+        "runOn": "folderOpen"
+      }
+    }
+  ]
+}
