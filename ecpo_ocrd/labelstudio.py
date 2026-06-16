@@ -16,7 +16,20 @@ _color_list = [
     "#E74C3C",
     "#E67E22",
     "#9B59B6",
+    "#2ECC71",  # hole regions from here
+    "#1ABC9C",
+    "#F1C40F",
+    "#34495E",
 ]
+
+pre_color_map = {
+    "image": _color_list[0],
+    "paragraph": _color_list[1],
+    "heading": _color_list[2],
+    "separator": _color_list[3],
+}  # remaining colors will be dedicated to hole regions (type + "_hole")
+
+hole_suffix = "_hole"
 
 
 class LabelStudioExportProcessor(Processor):
@@ -31,7 +44,12 @@ class LabelStudioExportProcessor(Processor):
         # Jump to process_page_file
         super().process_workspace(workspace)
 
-        color_map = {l: _color_list[i] for i, l in enumerate(self.labels)}
+        color_map = dict()
+        for i, l in enumerate(self.labels):
+            if l in pre_color_map:
+                color_map[l] = pre_color_map[l]
+            else:
+                color_map[l] = _color_list[len(pre_color_map) + i]
 
         labels = "\n".join(
             f'<Label value="{l}" background="{color_map[l]}"/>' for l in self.labels
@@ -83,11 +101,18 @@ class LabelStudioExportProcessor(Processor):
         annotations = []
 
         # Iterate over text regions
-        for region in self.page.get_TextRegion():
+        text_region = self.page.get_TextRegion()
+        # sort text_region by their id to ensure that the hole region is after the main region
+        text_region.sort(key=lambda r: r.id)
+
+        for region in text_region:
             # Determine label
             label = "text"
             if region.type_:
-                label = region.type_
+                if region.id.endswith(hole_suffix):
+                    label = region.type_ + hole_suffix
+                else:
+                    label = region.type_
 
             annotations.append(self._handle_region(region, label))
 
@@ -112,8 +137,18 @@ class LabelStudioExportProcessor(Processor):
         # Register this label
         self.labels.add(label)
 
-        coords = bbox_from_points(region.get_Coords().points)
+        # get the exact point instead of the bounding box
+        points = region.get_Coords().get_points()
+        # parse "x,y x,y ..." into [(x, y), (x, y), ...]
+        coords = [tuple(map(int, p.split(","))) for p in points.split()]
 
+        # normalize to percentage for LabelStudio
+        norm_coords = [
+            (x / self.page.imageWidth * 100, y / self.page.imageHeight * 100)
+            for x, y in coords
+        ]
+
+        # Here, hole of a region is also treated as a region with a special label (type + "_hole")
         return {
             "original_width": int(self.page.imageWidth),
             "original_height": int(self.page.imageHeight),
@@ -121,12 +156,9 @@ class LabelStudioExportProcessor(Processor):
             "id": region.id,
             "from_name": "label",
             "to_name": "image",
-            "type": "rectanglelabels",
+            "type": "polygonlabels",
             "value": {
-                "x": coords[0] / self.page.imageWidth * 100,
-                "y": coords[1] / self.page.imageHeight * 100,
-                "width": (coords[2] - coords[0]) / self.page.imageWidth * 100,
-                "height": (coords[3] - coords[1]) / self.page.imageHeight * 100,
+                "points": norm_coords,
                 "labels": [label],
             },
         }

@@ -5,8 +5,10 @@
 requires = [
     "setuptools >=61",
     "setuptools-ocrd",
+    "scikit-build-core",
+    "pybind11[global]",
 ]
-build-backend = "setuptools.build_meta"
+build-backend = "scikit_build_core.build"
 
 # This section provides general project metadata that is used across
 # a variety of build tools. Notably, the version specified here is the
@@ -17,6 +19,7 @@ description = "An OCR-D pipeline for ECPO"
 readme = "README.md"
 maintainers = [
     { name = "Dominic Kempf", email = "ssc@uni-heidelberg.de" },
+    { name = "Tuyen Le", email = "ssc@uni-heidelberg.de" },
 ]
 dynamic = ["version"]
 requires-python = ">=3.8"
@@ -28,13 +31,18 @@ classifiers = [
 ]
 dependencies = [
     "click",
-    "ocrd",
+    "ocrd==3.3.0",
     "tqdm",
+    "scikit-image",
+    "gdown==5.2.0",
+    "numpy<1.24.0",
+    "tensorflow<2.13",
 ]
 
 [project.scripts]
 ecpo_ocrd = "ecpo_ocrd.__main__:main"
 ocrd-regions-to-labelstudio = "ecpo_ocrd.labelstudio:cli"
+ocrd-ecpo-segment = "ecpo_ocrd.ecpo_processor:cli"
 
 # The following section contains setuptools-specific configuration
 # options. For a full reference of available options, check the overview
