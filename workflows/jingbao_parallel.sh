@@ -40,7 +40,9 @@ fi
 
 export OCRD_MAX_PARALLEL_PAGES=5
 
+# processor name should exclude prefix "ocrd-" since ocrd.core will add it back when looking up the processor class
+# e.g. "eynollah-inference" instead of "ocrd-eynollah-inference"
 CUDA_VISIBLE_DEVICES=0 \
 ocrd process -m "$METS" -U "$SOCK" \
-'ocrd-eynollah-inference -I OCR-D-IMG -O OCR-D-EYNOLLAH -P model eynollah-scale-bin-20260325-artbound-noheadings' \
-'ocrd-ecpo-segment -I OCR-D-EYNOLLAH -O OCR-D-ECPO -p "{\"labels\": [\"text\"]}"'
+'eynollah-inference -I OCR-D-IMG -O OCR-D-EYNOLLAH -P model eynollah-scale-bin-20260325-artbound-noheadings' \
+'ecpo-segment -I OCR-D-EYNOLLAH -O OCR-D-ECPO -p "{\"labels\": [\"text\"]}"'
