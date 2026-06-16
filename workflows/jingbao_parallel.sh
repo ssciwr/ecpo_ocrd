@@ -1,5 +1,5 @@
 # solution from codex on ocrd-core
-WS=/path/to/workspace
+WS=/mnt/data/tle/ocrd_workspace_test
 METS="$WS/mets.xml"
 SOCK=/tmp/ocrd-mets-$$.sock
 
