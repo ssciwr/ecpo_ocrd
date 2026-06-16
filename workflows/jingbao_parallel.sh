@@ -38,7 +38,7 @@ if [ ! -S "$SOCK" ]; then
     exit 1
 fi
 
-export OCRD_MAX_PARALLEL_PAGES=5
+export OCRD_MAX_PARALLEL_PAGES=2
 
 # processor name should exclude prefix "ocrd-" since ocrd.core will add it back when looking up the processor class
 # e.g. "eynollah-inference" instead of "ocrd-eynollah-inference"
