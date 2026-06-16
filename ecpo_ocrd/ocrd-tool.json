@@ -38,6 +38,19 @@
       "steps": [
         "layout/segmentation/region"
       ]
+    },
+    "ocrd-vlm-ocr": {
+      "categories": [
+        "Text recognition and optimization"
+      ],
+      "description": "Apply VLM-based OCR",
+      "executable": "ocrd-vlm-ocr",
+      "input_file_grp_cardinality": 1,
+      "output_file_grp_cardinality": 1,
+      "parameters": {},
+      "steps": [
+        "recognition/text-recognition"
+      ]
     }
   },
   "version": "0.0.1"
