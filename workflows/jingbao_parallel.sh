@@ -38,12 +38,12 @@ if [ ! -S "$SOCK" ]; then
     exit 1
 fi
 
-export OCRD_MAX_PARALLEL_PAGES=1 # test for eynollah inference
+export OCRD_MAX_PARALLEL_PAGES=1 # eynollah inference failed when this was > 1
 
 export CUDA_VISIBLE_DEVICES=0
 
 # processor name should exclude prefix "ocrd-" since ocrd.core will add it back when looking up the processor class
 # e.g. "eynollah-inference" instead of "ocrd-eynollah-inference"
 ocrd process -m "$METS" -U "$SOCK" \
-'eynollah-inference -I OCR-D-IMG -O OCR-D-EYNOLLAH -P model eynollah-scale-bin-20260325-artbound-noheadings'
-# 'ecpo-segment -I OCR-D-EYNOLLAH -O OCR-D-ECPO'
+'eynollah-inference -I OCR-D-IMG -O OCR-D-EYNOLLAH -P model eynollah-scale-bin-20260325-artbound-noheadings' \
+'ecpo-segment -I OCR-D-EYNOLLAH -O OCR-D-ECPO'
