@@ -47,7 +47,23 @@
       "executable": "ocrd-vlm-ocr",
       "input_file_grp_cardinality": 1,
       "output_file_grp_cardinality": 1,
-      "parameters": {},
+      "parameters": {
+        "server": {
+          "type": "string",
+          "description": "The API-URL of an OpenAI-compatible inference server e.g. hosted locally with VLLM",
+          "required": true
+        },
+        "model": {
+          "type": "string",
+          "description": "Model identifier for the inference server",
+          "required": true
+        },
+        "apikey": {
+          "type": "string",
+          "description": "API key for the inference server",
+          "default": "no-api-key-required"
+        }
+      },
       "steps": [
         "recognition/text-recognition"
       ]

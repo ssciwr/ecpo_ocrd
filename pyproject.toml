@@ -32,6 +32,7 @@ classifiers = [
 dependencies = [
     "click",
     "ocrd==3.3.0",
+    "openai",
     "tqdm",
     "scikit-image",
     "gdown==5.2.0",
