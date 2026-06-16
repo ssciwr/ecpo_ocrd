@@ -39,7 +39,7 @@ if [ ! -S "$SOCK" ]; then
 fi
 
 # eynollah inference failed when this was > 1
-export OCRD_MAX_PARALLEL_PAGES=2
+export OCRD_MAX_PARALLEL_PAGES=1
 
 export CUDA_VISIBLE_DEVICES=0
 
