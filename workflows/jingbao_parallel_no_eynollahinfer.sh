@@ -1,5 +1,14 @@
 # solution from codex on ocrd-core
-WS=/mnt/data/tle/ocrd_workspace_test
+
+# get path to workspace from the command line argument
+
+WS="$1"
+
+if [ -z "$WS" ]; then
+  echo "Usage: $0 <path_to_workspace>"
+  exit 1
+fi
+
 METS="$WS/mets.xml"
 SOCK=/tmp/ocrd-mets-$$.sock
 
@@ -38,13 +47,14 @@ if [ ! -S "$SOCK" ]; then
     exit 1
 fi
 
-# eynollah inference failed when this was > 1
 export OCRD_MAX_PARALLEL_PAGES=5
-
 export CUDA_VISIBLE_DEVICES=0
+export OCRD_EXISTING_OUTPUT=ABORT
+export OCRD_MISSING_OUTPUT=ABORT
 
-# processor name should exclude prefix "ocrd-" since ocrd.core will add it back when looking up the processor class
-# e.g. "eynollah-inference" instead of "ocrd-eynollah-inference"
-# ocrd-eynollah-inference -m "$METS" -U "$SOCK" -I OCR-D-IMG -O OCR-D-EYNOLLAH -P model eynollah-scale-bin-20260325-artbound-noheadings
+# ocrd-eynollah-inference yields error with OCRD_MAX_PARALLEL_PAGES > 1,
+# so we run it separately with another script, then run the remaining steps in parallel here
 
 ocrd-ecpo-segment -m "$METS" -U "$SOCK" -I OCR-D-EYNOLLAH -O OCR-D-ECPO
+
+# ocrd step goes here...

@@ -1,5 +1,19 @@
 # solution from codex on ocrd-core and ChatGPT
-WS=/mnt/data/tle/ocrd_workspace_test
+
+# get path to workspace from the command line argument
+
+WS="$1"
+WK_NUM="$2"
+
+if [ -z "$WS" ]; then
+  echo "Usage: $0 <path_to_workspace> [<num_parallel_workers>]"
+  exit 1
+fi
+
+if [ -z "$WK_NUM" ]; then
+  WK_NUM=2
+fi
+
 METS="$WS/mets.xml"
 SOCK=/tmp/ocrd-mets-$$.sock
 
@@ -75,14 +89,6 @@ process_page () {
         return 1
     fi
 
-    # 2) ECPO segmentation
-    # ocrd-ecpo-segment -m "$METS" -U "$SOCK" -I OCR-D-EYNOLLAH -O OCR-D-ECPO -g $PAGE
-
-    # if [ $? -ne 0 ]; then
-    #     echo "ECPO failed on $PAGE"
-    #     return 1
-    # fi
-
     echo "Done page: $PAGE"
 }
 
@@ -90,5 +96,5 @@ export -f process_page
 export WS METS SOCK
 
 
-# --- SAFE PARALLEL EXECUTION (2 workers) ---
-printf "%s\n" $PAGES | xargs -n 1 -P 2 -I {} bash -c 'process_page "$@"' _ {}
+# --- SAFE PARALLEL EXECUTION (n workers) ---
+printf "%s\n" $PAGES | xargs -n 1 -P $WK_NUM -I {} bash -c 'process_page "$@"' _ {}
