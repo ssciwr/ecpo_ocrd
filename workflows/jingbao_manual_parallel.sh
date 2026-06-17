@@ -65,7 +65,7 @@ process_page () {
 
     # 1) Eynollah inference
     ocrd-eynollah-inference -m "$METS" -U "$SOCK" \
-        -I OCR-D-IMG -O OCR-D-EYNOLLAH \
+        -I OCR-D-IMG -O OCR-D-EYNOLLAH-M \
         -g $PAGE \
         -P model eynollah-scale-bin-20260325-artbound-noheadings
 
