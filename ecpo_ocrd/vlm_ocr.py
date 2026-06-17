@@ -18,7 +18,7 @@ from ecpo_ocrd.pagexml import (
     is_hole_region,
     ocrd_regions_to_region_polygons,
 )
-from ecpo_ocrd.refine import crop_polygon
+from ecpo_ocrd.polygon import crop_polygon
 
 
 OCR_PROMPT_TEMPLATE = """

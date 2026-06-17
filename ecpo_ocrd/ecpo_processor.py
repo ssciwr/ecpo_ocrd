@@ -18,9 +18,9 @@ from ocrd_models.ocrd_page import (
 from ocrd_utils import points_from_polygon
 
 from ecpo_ocrd.pagexml import ocrd_regions_to_polygons
+from ecpo_ocrd.polygon import crop_polygon
 from ecpo_ocrd.refine import (
     LayoutDetector,
-    crop_polygon,
     translate,
     overlay_outline,
     flatten_polys,
