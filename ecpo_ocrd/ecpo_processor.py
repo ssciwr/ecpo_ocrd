@@ -1,6 +1,6 @@
 from typing import Optional
 import click
-from shapely.geometry import Polygon, MultiPolygon, LineString
+from shapely.geometry import Polygon
 from PIL import Image
 import numpy as np
 import os
@@ -17,6 +17,7 @@ from ocrd_models.ocrd_page import (
 )
 from ocrd_utils import points_from_polygon
 
+from ecpo_ocrd.pagexml import ocrd_regions_to_polygons
 from ecpo_ocrd.refine import (
     LayoutDetector,
     crop_polygon,
@@ -36,8 +37,6 @@ region_mapping = {
     "heading": ("heading", TextRegionType, "TextRegion"),
     "separator": (None, SeparatorRegionType, "SeparatorRegion"),
 }
-
-hole_suffix = "_hole"  # hole suffix in PAGE XML
 
 
 class ECPOInferenceProcessor(Processor):
@@ -64,63 +63,6 @@ class ECPOInferenceProcessor(Processor):
         if hasattr(self, "labels"):
             del self.labels
 
-    def _build_hierarchy_regions(
-        self,
-        regions: list[
-            TextRegionType
-            | ImageRegionType
-            | LineDrawingRegionType
-            | SeparatorRegionType
-        ],
-    ):
-        """Build a hierarchy of regions based on their IDs and coordinates.
-        Regions with '_hole' suffix in their ID are considered hole regions of their parent (same index).
-        """
-        region_hier = {}
-        for region in regions:
-            region_id = region.id if region.id else ""
-            region_idx = (
-                int(region_id.split("_")[1]) if "_" in region_id else 0
-            )  # e.g. region_xxx_text_hole, xxx starts from 1
-            is_hole = region_id.endswith(hole_suffix)
-
-            points = region.get_Coords().get_points()
-            # parse "x,y x,y ..." into [(x, y), (x, y), ...]
-            coords = [tuple(map(int, p.split(","))) for p in points.split()]
-
-            if region_idx not in region_hier:
-                region_hier[region_idx] = {
-                    "shell": None,  # main region polygon
-                    "holes": set(),  # set of hole coords
-                }
-
-            if is_hole:
-                region_hier[region_idx]["holes"].add(tuple(coords))
-            else:
-                region_hier[region_idx]["shell"] = coords
-
-        return region_hier
-
-    def _convert_ocrd_regions_to_polygons(
-        self,
-        regions: list[
-            TextRegionType
-            | ImageRegionType
-            | LineDrawingRegionType
-            | SeparatorRegionType
-        ],
-    ) -> list[Polygon]:
-        """Convert OCR-D regions to Shapely Polygons for further processing."""
-        region_heir = self._build_hierarchy_regions(regions)
-        polygons = []
-        for idx, region in region_heir.items():
-            shell = region["shell"]
-            holes = region["holes"]
-            if shell:
-                polygon = Polygon(shell, holes)
-                polygons.append(polygon)
-        return polygons
-
     def _refine_regions(
         self,
         org_img_arr: np.ndarray,
@@ -145,7 +87,7 @@ class ECPOInferenceProcessor(Processor):
             list[Polygon]: A list of refined regions in polygon format.
         """
         # convert coordinates of regions into polygon format
-        polygons = self._convert_ocrd_regions_to_polygons(regions)
+        polygons = ocrd_regions_to_polygons(regions)
 
         polygons = list(reversed(sorted(polygons, key=lambda p: p.area)))
 
@@ -206,9 +148,7 @@ class ECPOInferenceProcessor(Processor):
             # draw debug image if level is DEBUG
             if self.logger.isEnabledFor(logging.DEBUG):
                 # draw extracted polygons on the original image for debugging
-                selected_polygons = self._convert_ocrd_regions_to_polygons(
-                    sub_selected_regions
-                )
+                selected_polygons = ocrd_regions_to_polygons(sub_selected_regions)
                 debug_img = overlay_outline(
                     Image.fromarray(img_arr), {label: selected_polygons}
                 )
@@ -290,9 +230,7 @@ class ECPOInferenceProcessor(Processor):
                     f"After refinement, there are {len(after_re_regions)} {label} regions stored in PAGE XML."
                 )
 
-                after_re_polys = self._convert_ocrd_regions_to_polygons(
-                    after_re_regions
-                )
+                after_re_polys = ocrd_regions_to_polygons(after_re_regions)
                 self.logger.debug(
                     f"After refinement, there are {len(after_re_polys)} {label} polygons extracted from PAGE XML."
                 )

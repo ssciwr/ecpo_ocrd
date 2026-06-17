@@ -2,16 +2,23 @@ import asyncio
 import base64
 from io import BytesIO
 from multiprocessing import BoundedSemaphore
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
+import numpy as np
 import openai
 from ocrd import OcrdPage, OcrdPageResult, Processor
 from ocrd.decorators import ocrd_cli_options, ocrd_cli_wrap_processor
 from ocrd_models.ocrd_page import TextEquivType
-from ocrd_utils import bbox_from_polygon, coordinates_of_segment, crop_image
 
 import click
-from PIL import Image, ImageDraw, ImageStat
+from PIL import Image
+
+from ecpo_ocrd.pagexml import (
+    RegionPolygon,
+    is_hole_region,
+    ocrd_regions_to_region_polygons,
+)
+from ecpo_ocrd.refine import crop_polygon
 
 
 OCR_PROMPT_TEMPLATE = """
@@ -45,8 +52,6 @@ Output format (no explanations, no reasoning):
 Only produce the structured fields. No commentary or explanation.
 """
 
-
-HOLE_SUFFIX = "_hole"
 REQUEST_SEMAPHORE_LIMIT = 100
 
 
@@ -112,63 +117,38 @@ class VLMOCRProcessor(Processor):
     def _extract_text_region_images(
         self, text_regions, page_image: Image.Image, page_coords: dict
     ) -> List[Tuple[object, Image.Image]]:
-        holes_by_region_id = self._collect_holes(text_regions)
-        num_holes = sum(len(holes) for holes in holes_by_region_id.values())
-        text_regions = [region for region in text_regions if not self._is_hole(region)]
+        num_holes = sum(1 for region in text_regions if is_hole_region(region))
+        region_polygons = ocrd_regions_to_region_polygons(
+            text_regions, page_image, page_coords
+        )
         self.logger.debug(
             "extracted %d text shell regions and %d text hole regions",
-            len(text_regions),
+            len(region_polygons),
             num_holes,
         )
+        page_array = np.array(page_image)
 
         return [
             (
-                region,
-                self._image_from_text_region(
-                    region,
-                    holes_by_region_id.get(region.id, []),
-                    page_image,
-                    page_coords,
-                ),
+                region_polygon.region,
+                self._image_from_text_region(region_polygon, page_array),
             )
-            for region in text_regions
+            for region_polygon in region_polygons
         ]
-
-    def _collect_holes(self, text_regions) -> Dict[str, list]:
-        holes_by_region_id = {}
-        for region in text_regions:
-            if self._is_hole(region):
-                self.logger.debug(
-                    "attaching hole region %s to %s",
-                    region.id,
-                    region.id[: -len(HOLE_SUFFIX)],
-                )
-                holes_by_region_id.setdefault(
-                    region.id[: -len(HOLE_SUFFIX)], []
-                ).append(region)
-        return holes_by_region_id
-
-    def _is_hole(self, region) -> bool:
-        return bool(region.id and region.id.endswith(HOLE_SUFFIX))
 
     def _image_from_text_region(
-        self, region, holes, page_image: Image.Image, page_coords: dict
+        self, region_polygon: RegionPolygon, page_array: np.ndarray
     ) -> Image.Image:
-        polygon = coordinates_of_segment(region, page_image, page_coords)
-        bbox = bbox_from_polygon(polygon)
-        hole_polygons = [
-            coordinates_of_segment(hole, page_image, page_coords) for hole in holes
-        ]
+        region = region_polygon.region
+        polygon = region_polygon.polygon
         self.logger.debug(
             "text region %s: bbox=%s holes=%d",
             region.id,
-            bbox,
-            len(hole_polygons),
+            polygon.bounds,
+            len(polygon.interiors),
         )
-        masked_image = self._image_from_polygon_with_holes(
-            page_image, polygon, hole_polygons
-        )
-        cropped_image = crop_image(masked_image, box=bbox)
+        cropped_arr, _, _ = crop_polygon(page_array, polygon)
+        cropped_image = Image.fromarray(cropped_arr)
         self.logger.debug(
             "text region %s: crop size=%dx%d",
             region.id,
@@ -176,27 +156,6 @@ class VLMOCRProcessor(Processor):
             cropped_image.height,
         )
         return cropped_image
-
-    def _image_from_polygon_with_holes(
-        self, image: Image.Image, polygon, hole_polygons
-    ) -> Image.Image:
-        mask = Image.new("L", image.size, 0)
-        draw = ImageDraw.Draw(mask)
-        self._draw_polygon(draw, polygon, fill=255)
-        for hole_polygon in hole_polygons:
-            self._draw_polygon(draw, hole_polygon, fill=0)
-
-        background = Image.new(image.mode, image.size, self._background_color(image))
-        return Image.composite(image, background, mask)
-
-    def _draw_polygon(self, draw: ImageDraw.ImageDraw, polygon, fill: int) -> None:
-        draw.polygon([tuple(point) for point in polygon], fill=fill)
-
-    def _background_color(self, image: Image.Image):
-        median = ImageStat.Stat(image).median
-        if len(median) > 1:
-            return tuple(median)
-        return median[0]
 
     async def _ocr_region_images(
         self, region_images: Sequence[Tuple[object, Image.Image]]
