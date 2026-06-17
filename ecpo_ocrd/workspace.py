@@ -41,7 +41,7 @@ def create(workspace=None, sds=None, data=None, sample=None):
 
     with chdir(workspace):
         # Create a folder in the workspace for the original images
-        (pathlib.Path(".") / "OCR-D-IMG").mkdir(parents=True, exist_ok=True)
+        # (pathlib.Path(".") / "OCR-D-IMG").mkdir(parents=True, exist_ok=True)
 
         # Initialize the workspace
         subprocess.run(["ocrd", "workspace", "init", str(workspace)], check=True)
