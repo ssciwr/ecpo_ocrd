@@ -47,4 +47,6 @@ export CUDA_VISIBLE_DEVICES=0
 # e.g. "eynollah-inference" instead of "ocrd-eynollah-inference"
 ocrd-eynollah-inference -m "$METS" -U "$SOCK" -I OCR-D-IMG -O OCR-D-EYNOLLAH -P model eynollah-scale-bin-20260325-artbound-noheadings
 
-ocrd-ecpo-segment -m "$METS" -U "$SOCK" -I OCR-D-EYNOLLAH -O OCR-D-ECPO
+ocrd-eynollah-inference -m "$METS" -U "$SOCK" -I OCR-D-IMG -O OCR-D-EYNOLLAH -P model eynollah-scale-bin-20260325-artbound-noheadings
+
+# ocrd-ecpo-segment -m "$METS" -U "$SOCK" -I OCR-D-EYNOLLAH -O OCR-D-ECPO
