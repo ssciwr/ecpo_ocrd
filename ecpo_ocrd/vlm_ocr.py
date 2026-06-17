@@ -2,14 +2,16 @@ import asyncio
 import base64
 from io import BytesIO
 from multiprocessing import BoundedSemaphore
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import openai
 from ocrd import OcrdPage, OcrdPageResult, Processor
 from ocrd.decorators import ocrd_cli_options, ocrd_cli_wrap_processor
 from ocrd_models.ocrd_page import TextEquivType
+from ocrd_utils import bbox_from_polygon, coordinates_of_segment, crop_image
 
 import click
+from PIL import Image, ImageDraw, ImageStat
 
 
 OCR_PROMPT_TEMPLATE = """
@@ -44,6 +46,9 @@ Only produce the structured fields. No commentary or explanation.
 """
 
 
+HOLE_SUFFIX = "_hole"
+
+
 class VLMOCRProcessor(Processor):
     """OCR-D processor for block-level VLM OCR."""
 
@@ -65,21 +70,86 @@ class VLMOCRProcessor(Processor):
         pcgts = input_pcgts[0]
         result = OcrdPageResult(pcgts)
         page = pcgts.get_Page()
-        text_regions = page.get_TextRegion()
+        text_regions = page.get_AllRegions(classes=["Text"], order="reading-order")
         if not text_regions:
             return result
 
         page_image, page_coords, _ = self.workspace.image_from_page(page, page_id)
-        region_images = [
-            self.workspace.image_from_segment(region, page_image, page_coords)[0]
-            for region in text_regions
-        ]
-        region_texts = asyncio.run(self._ocr_region_images(region_images))
+        region_images = self._extract_text_region_images(
+            text_regions, page_image, page_coords
+        )
+        region_texts = asyncio.run(
+            self._ocr_region_images([image for _, image in region_images])
+        )
 
-        for region, text in zip(text_regions, region_texts):
+        for (region, _), text in zip(region_images, region_texts):
             region.set_TextEquiv([TextEquivType(Unicode=text)])
 
         return result
+
+    def _extract_text_region_images(
+        self, text_regions, page_image: Image.Image, page_coords: dict
+    ) -> List[Tuple[object, Image.Image]]:
+        holes_by_region_id = self._collect_holes(text_regions)
+        text_regions = [region for region in text_regions if not self._is_hole(region)]
+
+        return [
+            (
+                region,
+                self._image_from_text_region(
+                    region,
+                    holes_by_region_id.get(region.id, []),
+                    page_image,
+                    page_coords,
+                ),
+            )
+            for region in text_regions
+        ]
+
+    def _collect_holes(self, text_regions) -> Dict[str, list]:
+        holes_by_region_id = {}
+        for region in text_regions:
+            if self._is_hole(region):
+                holes_by_region_id.setdefault(
+                    region.id[: -len(HOLE_SUFFIX)], []
+                ).append(region)
+        return holes_by_region_id
+
+    def _is_hole(self, region) -> bool:
+        return bool(region.id and region.id.endswith(HOLE_SUFFIX))
+
+    def _image_from_text_region(
+        self, region, holes, page_image: Image.Image, page_coords: dict
+    ) -> Image.Image:
+        polygon = coordinates_of_segment(region, page_image, page_coords)
+        hole_polygons = [
+            coordinates_of_segment(hole, page_image, page_coords) for hole in holes
+        ]
+        masked_image = self._image_from_polygon_with_holes(
+            page_image, polygon, hole_polygons
+        )
+        return crop_image(masked_image, box=bbox_from_polygon(polygon))
+
+    def _image_from_polygon_with_holes(
+        self, image: Image.Image, polygon, hole_polygons
+    ) -> Image.Image:
+        mask = Image.new("L", image.size, 0)
+        draw = ImageDraw.Draw(mask)
+        self._draw_polygon(draw, polygon, fill=255)
+        for hole_polygon in hole_polygons:
+            self._draw_polygon(draw, hole_polygon, fill=0)
+
+        background = Image.new(image.mode, image.size, self._background_color(image))
+        return Image.composite(image, background, mask)
+
+    def _draw_polygon(self, draw: ImageDraw.ImageDraw, polygon, fill: int) -> None:
+        draw.polygon([tuple(point) for point in polygon], fill=fill)
+
+    def _background_color(self, image: Image.Image):
+        median = ImageStat.Stat(image).median
+        if len(median) > 1:
+            return tuple(median)
+        return median[0]
 
     async def _ocr_region_images(self, region_images: Sequence) -> List[str]:
         tasks = [
@@ -97,7 +167,7 @@ class VLMOCRProcessor(Processor):
         )
 
     async def _vllm_request(self, prompt: str, image_data_url: str) -> str:
-        await asyncio.to_thread(self.request_semaphore.acquire)
+        await self._acquire_request_slot()
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -124,6 +194,10 @@ class VLMOCRProcessor(Processor):
             return response.choices[0].message.content
         finally:
             self.request_semaphore.release()
+
+    async def _acquire_request_slot(self) -> None:
+        while not self.request_semaphore.acquire(block=False):
+            await asyncio.sleep(0.01)
 
     def _image_data_url(self, image) -> str:
         buffer = BytesIO()
