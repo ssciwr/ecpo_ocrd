@@ -67,6 +67,19 @@
       "steps": [
         "recognition/text-recognition"
       ]
+    },
+    "ocrd-yitizi-normalization": {
+      "categories": [
+        "Text recognition and optimization"
+      ],
+      "description": "Normalize chinese characters",
+      "executable": "ocrd-yitizi-normalization",
+      "input_file_grp_cardinality": 1,
+      "output_file_grp_cardinality": 1,
+      "parameters": {},
+      "steps": [
+        "recognition/post-correction"
+      ]
     }
   },
   "version": "0.0.1"

@@ -45,6 +45,7 @@ ecpo_ocrd = "ecpo_ocrd.__main__:main"
 ocrd-regions-to-labelstudio = "ecpo_ocrd.labelstudio:cli"
 ocrd-ecpo-segment = "ecpo_ocrd.ecpo_processor:cli"
 ocrd-vlm-ocr = "ecpo_ocrd.vlm_ocr:cli"
+ocrd-yitizi-normalization = "ecpo_ocrd.yitizi:cli"
 
 # The following section contains setuptools-specific configuration
 # options. For a full reference of available options, check the overview
@@ -53,4 +54,4 @@ ocrd-vlm-ocr = "ecpo_ocrd.vlm_ocr:cli"
 packages = [
     "ecpo_ocrd",
 ]
-package-data = {"*" = ["ocrd-tool.json"]}
+package-data = {"*" = ["ocrd-tool.json", "replacements.txt"]}
