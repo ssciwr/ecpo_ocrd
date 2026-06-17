@@ -80,3 +80,8 @@ ocrd-eynollah-inference -m "$METS" -U "$SOCK" \
 pid4=$!
 
 wait "$pid0" "$pid1" "$pid2" "$pid3" "$pid4"
+
+# running results:
+# 5 workers run on page 1 in parallel, but it still yielded error of existing file
+# even though we set OCRD_EXISTING_OUTPUT=ABORT
+# for the remaining pages (2 to 10), it run sequentially
