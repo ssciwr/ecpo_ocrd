@@ -49,7 +49,8 @@ def create(workspace=None, sds=None, data=None, sample=None):
 
         # Add the images to the workspace
         for i, image in tqdm.tqdm(enumerate(images)):
-            copied = shutil.copy(image, pathlib.Path(".") / "OCR-D-IMG" / image.name)
+            # no copy to save disk space, but add to workspace with original path
+            # copied = shutil.copy(image, pathlib.Path(".") / "OCR-D-IMG" / image.name)
             subprocess.run(
                 [
                     "ocrd",
@@ -63,7 +64,7 @@ def create(workspace=None, sds=None, data=None, sample=None):
                     f"OCR-D-IMG-{i+1:04d}",
                     "-m",
                     "image/tiff",
-                    str(copied),
+                    str(image),
                 ],
                 check=True,
             )
