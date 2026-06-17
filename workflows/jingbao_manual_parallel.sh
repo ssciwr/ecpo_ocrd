@@ -64,12 +64,11 @@ process_page () {
     echo "====================================="
 
     # 1) Eynollah inference
-    ocrd process -m "$METS" -U "$SOCK" \
-        "eynollah-inference \
-            -I OCR-D-IMG \
-            -O OCR-D-EYNOLLAH \
-            --page-id $PAGE \
-            -P model eynollah-scale-bin-20260325-artbound-noheadings"
+    ocrd-eynollah-inference -m "$METS" -U "$SOCK" \
+        -I OCR-D-IMG -O OCR-D-EYNOLLAH \
+        -g $PAGE \
+        -P model eynollah-scale-bin-20260325-artbound-noheadings
+
 
     if [ $? -ne 0 ]; then
         echo "Eynollah failed on $PAGE"
@@ -77,11 +76,7 @@ process_page () {
     fi
 
     # 2) ECPO segmentation
-    ocrd process -m "$METS" -U "$SOCK" \
-        "ecpo-segment \
-            -I OCR-D-EYNOLLAH \
-            -O OCR-D-ECPO \
-            --page-id $PAGE"
+    ocrd-ecpo-segment -m "$METS" -U "$SOCK" -I OCR-D-EYNOLLAH -O OCR-D-ECPO -g $PAGE
 
     if [ $? -ne 0 ]; then
         echo "ECPO failed on $PAGE"
