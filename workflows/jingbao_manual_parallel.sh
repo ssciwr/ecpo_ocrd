@@ -76,12 +76,12 @@ process_page () {
     fi
 
     # 2) ECPO segmentation
-    ocrd-ecpo-segment -m "$METS" -U "$SOCK" -I OCR-D-EYNOLLAH -O OCR-D-ECPO -g $PAGE
+    # ocrd-ecpo-segment -m "$METS" -U "$SOCK" -I OCR-D-EYNOLLAH -O OCR-D-ECPO -g $PAGE
 
-    if [ $? -ne 0 ]; then
-        echo "ECPO failed on $PAGE"
-        return 1
-    fi
+    # if [ $? -ne 0 ]; then
+    #     echo "ECPO failed on $PAGE"
+    #     return 1
+    # fi
 
     echo "Done page: $PAGE"
 }
