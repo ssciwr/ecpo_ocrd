@@ -91,7 +91,7 @@ def install(prefix):
     )
     install_ocrd_tool(
         "ocrd-eynollah-inference",
-        package="git+https://github.com/ssciwr/ocrd_eynollah.git@parallel_test",
+        package="git+https://github.com/ssciwr/ocrd_eynollah.git@main",
         env_identifier="eynollah",
         models=["*"],
     )
