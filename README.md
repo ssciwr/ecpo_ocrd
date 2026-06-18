@@ -104,7 +104,7 @@ pip install .[non-eynollah]
 
 ### Run the parallel script
 
-After setting up the two conda environments, move to the root folder of the repository (`ecpo_ocrd`) and run the parallel script up to the `ecpo-segment` step with:
+After setting up the two conda environments and finishing the installation [above](#installation), move to the root folder of the repository (`ecpo_ocrd`) and run the parallel script up to the `ecpo-segment` step with:
 
 ```bash
 # assuming you are in the repository root
