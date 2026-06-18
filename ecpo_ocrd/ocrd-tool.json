@@ -20,6 +20,18 @@
         "evaluation/layout"
       ]
     },
+    "ocrd-export-textsoup": {
+      "categories": [
+        "Long-term preservation"
+      ],
+      "description": "Export per-page concatenation of OCR results for full text search",
+      "executable": "ocrd-export-textsoup",
+      "input_file_grp_cardinality": 1,
+      "output_file_grp_cardinality": 1,
+      "steps": [
+        "postprocessing/format-conversion"
+      ]
+    },
     "ocrd-ecpo-segment": {
       "categories": [
         "Layout analysis"
@@ -37,6 +49,48 @@
       },
       "steps": [
         "layout/segmentation/region"
+      ]
+    },
+    "ocrd-vlm-ocr": {
+      "categories": [
+        "Text recognition and optimization"
+      ],
+      "description": "Apply VLM-based OCR",
+      "executable": "ocrd-vlm-ocr",
+      "input_file_grp_cardinality": 1,
+      "output_file_grp_cardinality": 1,
+      "parameters": {
+        "server": {
+          "type": "string",
+          "description": "The API-URL of an OpenAI-compatible inference server e.g. hosted locally with VLLM",
+          "required": true
+        },
+        "model": {
+          "type": "string",
+          "description": "Model identifier for the inference server",
+          "required": true
+        },
+        "apikey": {
+          "type": "string",
+          "description": "API key for the inference server",
+          "default": "no-api-key-required"
+        }
+      },
+      "steps": [
+        "recognition/text-recognition"
+      ]
+    },
+    "ocrd-yitizi-normalization": {
+      "categories": [
+        "Text recognition and optimization"
+      ],
+      "description": "Normalize chinese characters",
+      "executable": "ocrd-yitizi-normalization",
+      "input_file_grp_cardinality": 1,
+      "output_file_grp_cardinality": 1,
+      "parameters": {},
+      "steps": [
+        "recognition/post-correction"
       ]
     }
   },

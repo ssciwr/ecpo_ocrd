@@ -4,7 +4,6 @@
 from shapely.geometry import Polygon, MultiPolygon, GeometryCollection
 from PIL import Image, ImageDraw
 import numpy as np
-import math
 from skimage.filters import threshold_otsu
 import networkx as nx
 from shapely.ops import unary_union, polygonize
@@ -16,97 +15,7 @@ import paddleocr
 
 import _cover_heuristic
 
-
-def rasterize_polygon_to_mask(
-    image_shape: tuple[int, int], polygon: Polygon | MultiPolygon
-) -> np.ndarray:
-    """Rasterize a shapely Polygon or MultiPolygon to a boolean mask of shape (H, W).
-    Holes are handled. Coordinates are rounded to integer pixel coordinates
-    with a consistent floor/ceil strategy.
-
-    Args:
-        image_shape (tuple[int, int]): (H, W) of the output mask
-        polygon (Polygon): shapely Polygon or MultiPolygon to rasterize
-
-    Returns:
-        np.ndarray: boolean mask of shape (H, W).
-            True inside the polygon, False outside
-    """
-    H, W = image_shape[0], image_shape[1]
-    if isinstance(polygon, Polygon):
-        polygons = [polygon]
-    elif isinstance(polygon, MultiPolygon):
-        polygons = list(polygon.geoms)
-    else:
-        raise TypeError("polygon must be shapely Polygon or MultiPolygon")
-
-    # Create mask image (L mode gives 0..255 values)
-    mask_img = Image.new("L", (W, H), 0)
-    draw = ImageDraw.Draw(mask_img)
-
-    for poly in polygons:
-        # Exterior (rounded to nearest integer). We use rounding to nearest pixel.
-        exterior_coords = [
-            (int(round(x)), int(round(y))) for x, y in poly.exterior.coords
-        ]
-        draw.polygon(exterior_coords, outline=255, fill=255)
-
-        # Interiors -> holes: draw them with fill=0 to erase
-        for interior in poly.interiors:
-            interior_coords = [
-                (int(round(x)), int(round(y))) for x, y in interior.coords
-            ]
-            draw.polygon(interior_coords, outline=0, fill=0)
-
-    mask = np.array(mask_img, dtype=np.uint8)  # 0 or 255
-    mask_bool = mask != 0  # boolean mask: True inside polygon
-    return mask_bool
-
-
-def crop_polygon(
-    image: np.ndarray, polygon: Polygon
-) -> tuple[np.ndarray, np.ndarray, tuple[int, int]]:
-    """Cut out the part of the image inside the polygon, and set the rest to white.
-    The cropping box is computed from polygon.bounds and clamped to image.
-
-    Args:
-        image (np.ndarray): image of shape (H, W) or (H, W, C)
-        polygon (Polygon): shapely Polygon to crop
-
-    Returns:
-        np.ndarray: cropped image of shape (H, W) or (H, W, C),
-            where the part outside the polygon is set to white (255).
-        np.ndarray: boolean mask of shape (H, w) for the cropped image,
-            where True indicates pixels inside the polygon
-        tuple[int, int]: (minx, miny) the top-left coordinate of the cropped part
-            in the original image
-    """
-    H, W = image.shape[0], image.shape[1]
-    mask = rasterize_polygon_to_mask((H, W), polygon)
-
-    # Compute integer bbox: floor(min), ceil(max) and clamp
-    minx, miny, maxx, maxy = polygon.bounds
-    minx = max(int(math.floor(minx)), 0)
-    miny = max(int(math.floor(miny)), 0)
-    maxx = min(int(math.ceil(maxx)), W)
-    maxy = min(int(math.ceil(maxy)), H)
-
-    # Crop both image and mask
-    mask_cropped = mask[miny:maxy, minx:maxx]
-
-    # Prepare cropped image: zero outside polygon in the bbox
-    if image.ndim == 3:
-        cropped_img = image[miny:maxy, minx:maxx].copy()
-        # Broadcast mask to channels
-        mask_3c = np.repeat(
-            mask_cropped[:, :, np.newaxis], cropped_img.shape[2], axis=2
-        )
-        cropped_img[~mask_3c] = 255
-    else:
-        cropped_img = image[miny:maxy, minx:maxx].copy()
-        cropped_img[~mask_cropped] = 255
-
-    return cropped_img, mask_cropped, (minx, miny)
+from ecpo_ocrd.polygon import crop_polygon, rasterize_polygon_to_mask
 
 
 def box_to_polygon(x0: float, y0: float, x1: float, y1: float):
