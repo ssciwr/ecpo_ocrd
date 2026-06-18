@@ -16,7 +16,7 @@ _color_list = [
     "#E74C3C",
     "#E67E22",
     "#9B59B6",
-    "#2ECC71",  # hole regions from here
+    "#2ECC71",
     "#1ABC9C",
     "#F1C40F",
     "#34495E",
@@ -27,9 +27,7 @@ pre_color_map = {
     "paragraph": _color_list[1],
     "heading": _color_list[2],
     "separator": _color_list[3],
-}  # remaining colors will be dedicated to hole regions (type + "_hole")
-
-hole_suffix = "_hole"
+}
 
 
 class LabelStudioExportProcessor(Processor):
@@ -102,17 +100,13 @@ class LabelStudioExportProcessor(Processor):
 
         # Iterate over text regions
         text_region = self.page.get_TextRegion()
-        # sort text_region by their id to ensure that the hole region is after the main region
         text_region.sort(key=lambda r: r.id)
 
         for region in text_region:
             # Determine label
             label = "text"
             if region.type_:
-                if region.id.endswith(hole_suffix):
-                    label = region.type_ + hole_suffix
-                else:
-                    label = region.type_
+                label = region.type_
 
             annotations.append(self._handle_region(region, label))
 
@@ -148,7 +142,6 @@ class LabelStudioExportProcessor(Processor):
             for x, y in coords
         ]
 
-        # Here, hole of a region is also treated as a region with a special label (type + "_hole")
         return {
             "original_width": int(self.page.imageWidth),
             "original_height": int(self.page.imageHeight),

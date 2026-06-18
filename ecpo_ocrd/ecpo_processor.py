@@ -19,7 +19,7 @@ from ocrd_models.ocrd_page import (
 from ecpo_ocrd.pagexml import ocrd_regions_to_polygons
 from ecpo_ocrd.polygon import (
     crop_polygon,
-    page_points_from_coords,
+    page_points_from_polygon,
     polygons_for_pagexml,
 )
 from ecpo_ocrd.refine import (
@@ -77,9 +77,6 @@ class ECPOInferenceProcessor(Processor):
     ) -> list[Polygon]:
         """Refine the input regions using the layout detector
         and return the refined regions as a list of Polygons.
-
-        Here regions with '_hole' suffix in their id are hole regions in their parent (same index).
-        These regions will be masked out before feeding into the layout detector.
 
         Args:
             org_img_arr (np.ndarray): The original image array of the page.
@@ -181,7 +178,7 @@ class ECPOInferenceProcessor(Processor):
                     poly_iter = polygons_for_pagexml(poly)
 
                     for p in poly_iter:
-                        points = page_points_from_coords(p.exterior.coords)
+                        points = page_points_from_polygon(p)
                         new_region = region_type_cls(
                             id=f"region_{refined_idx+1}_refined_{label}",
                             Coords=CoordsType(points=points),
@@ -190,21 +187,6 @@ class ECPOInferenceProcessor(Processor):
                             new_region.set_type(subtype)
 
                         getattr(page, f"add_{region_type_name}")(new_region)
-
-                        for hole_idx, h in enumerate(p.interiors):
-                            hole_points = page_points_from_coords(h.coords)
-                            hole_id = (
-                                f"region_{refined_idx+1}_refined_"
-                                f"{label}_{hole_idx+1}_hole"
-                            )
-                            hole_region = region_type_cls(
-                                id=hole_id,
-                                Coords=CoordsType(points=hole_points),
-                            )
-                            if subtype and hasattr(hole_region, "set_type"):
-                                hole_region.set_type(subtype)
-
-                            getattr(page, f"add_{region_type_name}")(hole_region)
 
                         refined_idx += 1
 
