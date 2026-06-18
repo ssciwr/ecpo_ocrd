@@ -15,15 +15,17 @@ from ocrd_models.ocrd_page import (
     SeparatorRegionType,
     CoordsType,
 )
-from ocrd_utils import points_from_polygon
 
 from ecpo_ocrd.pagexml import ocrd_regions_to_polygons
-from ecpo_ocrd.polygon import crop_polygon
+from ecpo_ocrd.polygon import (
+    crop_polygon,
+    page_points_from_coords,
+    polygons_for_pagexml,
+)
 from ecpo_ocrd.refine import (
     LayoutDetector,
     translate,
     overlay_outline,
-    flatten_polys,
 )
 
 import logging
@@ -176,10 +178,10 @@ class ECPOInferenceProcessor(Processor):
 
                 refined_idx = 0
                 for poly in refined_polys:
-                    poly_iter = flatten_polys(poly)
+                    poly_iter = polygons_for_pagexml(poly)
 
                     for p in poly_iter:
-                        points = points_from_polygon(p.exterior.coords)
+                        points = page_points_from_coords(p.exterior.coords)
                         new_region = region_type_cls(
                             id=f"region_{refined_idx+1}_refined_{label}",
                             Coords=CoordsType(points=points),
@@ -189,10 +191,14 @@ class ECPOInferenceProcessor(Processor):
 
                         getattr(page, f"add_{region_type_name}")(new_region)
 
-                        for h in p.interiors:
-                            hole_points = points_from_polygon(h.coords)
+                        for hole_idx, h in enumerate(p.interiors):
+                            hole_points = page_points_from_coords(h.coords)
+                            hole_id = (
+                                f"region_{refined_idx+1}_refined_"
+                                f"{label}_{hole_idx+1}_hole"
+                            )
                             hole_region = region_type_cls(
-                                id=f"region_{refined_idx+1}_refined_{label}_hole",
+                                id=hole_id,
                                 Coords=CoordsType(points=hole_points),
                             )
                             if subtype and hasattr(hole_region, "set_type"):
