@@ -20,6 +20,18 @@
         "evaluation/layout"
       ]
     },
+    "ocrd-export-textsoup": {
+      "categories": [
+        "Long-term preservation"
+      ],
+      "description": "Export per-page concatenation of OCR results for full text search",
+      "executable": "ocrd-export-textsoup",
+      "input_file_grp_cardinality": 1,
+      "output_file_grp_cardinality": 1,
+      "steps": [
+        "postprocessing/format-conversion"
+      ]
+    },
     "ocrd-ecpo-segment": {
       "categories": [
         "Layout analysis"
