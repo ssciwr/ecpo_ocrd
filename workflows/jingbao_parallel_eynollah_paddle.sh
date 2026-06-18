@@ -15,6 +15,7 @@ if [[ "$WS" == "--help" || "$WS" == "-h" ]]; then
 fi
 
 echo "Running Eynollah inference step..."
+start_eynollah=$(date +%s)
 conda run -n "$ENV_EYNOLLAH" \
     bash "$PROCESSOR_SCRIPT" \
     "$WS" \
@@ -22,11 +23,16 @@ conda run -n "$ENV_EYNOLLAH" \
     OCR-D-IMG \
     OCR-D-EYNOLLAH \
     -P model eynollah-scale-bin-20260325-artbound-noheadings
+end_eynollah=$(date +%s)
+echo "Eynollah inference step completed in $((end_eynollah - start_eynollah)) seconds"
 
 echo "Running ECPO segmentation step..."
+start_ecpo=$(date +%s)
 conda run -n "$ENV_NON_EYNOLLAH" \
     bash "$PROCESSOR_SCRIPT" \
     "$WS" \
     ocrd-ecpo-segment \
     OCR-D-EYNOLLAH \
     OCR-D-ECPO
+end_ecpo=$(date +%s)
+echo "ECPO segmentation step completed in $((end_ecpo - start_ecpo)) seconds"
