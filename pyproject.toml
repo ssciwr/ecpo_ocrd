@@ -34,11 +34,9 @@ dependencies = [
     "ocrd==3.3.0",
     "tqdm",
     "scikit-image",
-    "gdown==5.2.0",
-    "numpy<1.24.0",
-    "paddleocr>=3.3.1",
+    "paddleocr>=3.4.0",
     "paddlepaddle>=3.2.0",
-    "paddlex>=3.3.13",
+    "paddlex>=3.4.2",
 ]
 
 [project.scripts]
