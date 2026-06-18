@@ -15,14 +15,12 @@ if [[ "$WS" == "--help" || "$WS" == "-h" ]]; then
     exit 0
 fi
 
-run_live() {
-    local cmd="$*"
-    script -q -c "$cmd" /dev/null
-}
+export PYTHONUNBUFFERED=1
+export PYTHONIOENCODING=utf-8
 
 echo "Running Eynollah inference step..."
 start_eynollah=$(date +%s)
-run_live conda run -n "$ENV_EYNOLLAH" \
+conda run -n "$ENV_EYNOLLAH" \
     bash "$PROCESSOR_SCRIPT" \
     "$WS" \
     ocrd-eynollah-inference \
@@ -34,7 +32,7 @@ echo "Eynollah inference step completed in $((end_eynollah - start_eynollah)) se
 
 echo "Running ECPO segmentation step..."
 start_ecpo=$(date +%s)
-run_live conda run -n "$ENV_NON_EYNOLLAH" \
+conda run -n "$ENV_NON_EYNOLLAH" \
     bash "$PROCESSOR_SCRIPT" \
     "$WS" \
     ocrd-ecpo-segment \
