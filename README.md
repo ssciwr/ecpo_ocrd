@@ -42,7 +42,7 @@ Then, you can run any of the provided workflow shell scripts e.g.
 ../workflows/jingbao.sh
 ```
 
-## Running the pipeline in parallel
+## Running the pipeline with GPUs
 
 The below settings work for running Eynollah inference processor in parallel:
 
