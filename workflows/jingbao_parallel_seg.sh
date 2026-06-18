@@ -47,41 +47,14 @@ if [ ! -S "$SOCK" ]; then
     exit 1
 fi
 
-export OCRD_MAX_PARALLEL_PAGES=1
+export OCRD_MAX_PARALLEL_PAGES=8
 export CUDA_VISIBLE_DEVICES=0
 export OCRD_EXISTING_OUTPUT=ABORT
 export OCRD_MISSING_OUTPUT=ABORT
 
-# repeat eynollah inference multiple times to check if it runs in parallel
-
+# moving model loading to inside process_page_pcgts enables parallel execution for Eynollah inference
 ocrd-eynollah-inference -m "$METS" -U "$SOCK" \
-    -I OCR-D-IMG -O OCR-D-EYNOLLAH-RE \
-    -P model eynollah-scale-bin-20260325-artbound-noheadings &
-pid0=$!
+    -I OCR-D-IMG -O OCR-D-EYNOLLAH \
+    -P model eynollah-scale-bin-20260325-artbound-noheadings
 
-ocrd-eynollah-inference -m "$METS" -U "$SOCK" \
-    -I OCR-D-IMG -O OCR-D-EYNOLLAH-RE \
-    -P model eynollah-scale-bin-20260325-artbound-noheadings &
-pid1=$!
-
-ocrd-eynollah-inference -m "$METS" -U "$SOCK" \
-    -I OCR-D-IMG -O OCR-D-EYNOLLAH-RE \
-    -P model eynollah-scale-bin-20260325-artbound-noheadings &
-pid2=$!
-
-ocrd-eynollah-inference -m "$METS" -U "$SOCK" \
-    -I OCR-D-IMG -O OCR-D-EYNOLLAH-RE \
-    -P model eynollah-scale-bin-20260325-artbound-noheadings &
-pid3=$!
-
-ocrd-eynollah-inference -m "$METS" -U "$SOCK" \
-    -I OCR-D-IMG -O OCR-D-EYNOLLAH-RE \
-    -P model eynollah-scale-bin-20260325-artbound-noheadings &
-pid4=$!
-
-wait "$pid0" "$pid1" "$pid2" "$pid3" "$pid4"
-
-# running results:
-# 5 workers run on page 1 in parallel, but it still yielded error of existing file
-# even though we set OCRD_EXISTING_OUTPUT=ABORT
-# for the remaining pages (2 to 10), it run sequentially
+ocrd-ecpo-segment -m "$METS" -U "$SOCK" -I OCR-D-EYNOLLAH -O OCR-D-ECPO
