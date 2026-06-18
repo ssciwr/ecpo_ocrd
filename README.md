@@ -41,3 +41,14 @@ Then, you can run any of the provided workflow shell scripts e.g.
 ```bash
 ../workflows/jingbao.sh
 ```
+
+## Running the pipeline in parallel
+
+The below settings work for running Eynollah inference processor in parallel:
+
+* `Python` 3.10
+* `CUDA` 11.8
+* `cuDNN` 8.6
+* `TensorFlow` 2.12.0
+
+See [this instruction](https://github.com/ssciwr/ecpo-eynollah/blob/main/eynollah_training.md#step-by-step-installation) to create a `conda` environment with the above settings.
