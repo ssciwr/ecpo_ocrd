@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
 WS="${1:-.}"
@@ -6,7 +6,8 @@ WS="${1:-.}"
 # Adjust if needed
 ENV_EYNOLLAH="${2:?Missing env name for Eynollah processes}"
 ENV_NON_EYNOLLAH="${3:?Missing env name for non-Eynollah processes}"
-PROCESSOR_SCRIPT="./individual/jingbao_parallel_individual.sh"
+# Adjust if needed, this path works when running from the root of the repository
+PROCESSOR_SCRIPT="workflows/individual/jingbao_parallel_individual.sh"
 
 # usage
 if [[ "$WS" == "--help" || "$WS" == "-h" ]]; then
