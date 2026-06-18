@@ -1,13 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 # solution from codex on ocrd-core
 
 # get path to workspace from the command line argument
+# defaults to current directory if not provided
+WS="$(realpath "${1:-.}")"
+PROCESSOR="${2:?Missing processor name}"
+INPUT_GROUP="${3:?Missing input file group}"
+OUTPUT_GROUP="${4:?Missing output file group}"
 
-WS="$1"
-
-if [ -z "$WS" ]; then
-  echo "Usage: $0 <path_to_workspace>"
-  exit 1
-fi
+# remove the first 4 arguments
+# so that the remaining ones can be passed to the processor
+shift 4
 
 METS="$WS/mets.xml"
 SOCK=/tmp/ocrd-mets-$$.sock
@@ -52,8 +57,10 @@ export CUDA_VISIBLE_DEVICES=0
 export OCRD_EXISTING_OUTPUT=ABORT
 export OCRD_MISSING_OUTPUT=ABORT
 
-# try to run Eynollah inference with more than one parallel worker,
-# after moving model loading to inside process_page_pcgts
-ocrd-eynollah-inference -m "$METS" -U "$SOCK" \
-    -I OCR-D-IMG -O OCR-D-EYNOLLAH-TEST-8 \
-    -P model eynollah-scale-bin-20260325-artbound-noheadings
+# run the specified processor with the given arguments
+"$PROCESSOR" \
+    -m "$METS" \
+    -U "$SOCK" \
+    -I "$INPUT_GROUP" \
+    -O "$OUTPUT_GROUP" \
+    "$@"

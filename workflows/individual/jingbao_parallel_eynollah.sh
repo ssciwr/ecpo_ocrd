@@ -1,8 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 # solution from codex on ocrd-core
 
 # get path to workspace from the command line argument
-
-WS="$1"
+# defaults to current directory if not provided
+WS="${1:-.}"
 
 if [ -z "$WS" ]; then
   echo "Usage: $0 <path_to_workspace>"
@@ -47,14 +50,13 @@ if [ ! -S "$SOCK" ]; then
     exit 1
 fi
 
-export OCRD_MAX_PARALLEL_PAGES=5
+export OCRD_MAX_PARALLEL_PAGES=8
 export CUDA_VISIBLE_DEVICES=0
 export OCRD_EXISTING_OUTPUT=ABORT
 export OCRD_MISSING_OUTPUT=ABORT
 
-# ocrd-eynollah-inference yields error with OCRD_MAX_PARALLEL_PAGES > 1,
-# so we run it separately with another script, then run the remaining steps in parallel here
-
-ocrd-ecpo-segment -m "$METS" -U "$SOCK" -I OCR-D-EYNOLLAH -O OCR-D-ECPO
-
-# ocrd step goes here...
+# run Eynollah inference with more than one parallel worker,
+# after moving model loading to inside process_page_pcgts
+ocrd-eynollah-inference -m "$METS" -U "$SOCK" \
+    -I OCR-D-IMG -O OCR-D-EYNOLLAH \
+    -P model eynollah-scale-bin-20260325-artbound-noheadings

@@ -1,8 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 # solution from codex on ocrd-core
 
 # get path to workspace from the command line argument
-
-WS="$1"
+# defaults to current directory if not provided
+WS="${1:-.}"
 
 if [ -z "$WS" ]; then
   echo "Usage: $0 <path_to_workspace>"
@@ -52,9 +55,5 @@ export CUDA_VISIBLE_DEVICES=0
 export OCRD_EXISTING_OUTPUT=ABORT
 export OCRD_MISSING_OUTPUT=ABORT
 
-# moving model loading to inside process_page_pcgts enables parallel execution for Eynollah inference
-ocrd-eynollah-inference -m "$METS" -U "$SOCK" \
-    -I OCR-D-IMG -O OCR-D-EYNOLLAH \
-    -P model eynollah-scale-bin-20260325-artbound-noheadings
-
+# refine eynollah inference with paddleocr
 ocrd-ecpo-segment -m "$METS" -U "$SOCK" -I OCR-D-EYNOLLAH -O OCR-D-ECPO

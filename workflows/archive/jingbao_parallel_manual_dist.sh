@@ -91,6 +91,8 @@ process_page () {
         return 1
     fi
 
+    # 2) Other steps in the pipeline...
+
     echo "Done page: $PAGE"
 }
 
