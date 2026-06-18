@@ -1,10 +1,10 @@
 import asyncio
 import base64
+import logging
 from io import BytesIO
 from multiprocessing import BoundedSemaphore
 from typing import List, Optional, Sequence, Tuple
 
-import numpy as np
 import openai
 from ocrd import OcrdPage, OcrdPageResult, Processor
 from ocrd.decorators import ocrd_cli_options, ocrd_cli_wrap_processor
@@ -12,13 +12,6 @@ from ocrd_models.ocrd_page import TextEquivType
 
 import click
 from PIL import Image
-
-from ecpo_ocrd.pagexml import (
-    RegionPolygon,
-    is_hole_region,
-    ocrd_regions_to_region_polygons,
-)
-from ecpo_ocrd.polygon import crop_polygon
 
 
 OCR_PROMPT_TEMPLATE = """
@@ -117,45 +110,20 @@ class VLMOCRProcessor(Processor):
     def _extract_text_region_images(
         self, text_regions, page_image: Image.Image, page_coords: dict
     ) -> List[Tuple[object, Image.Image]]:
-        num_holes = sum(1 for region in text_regions if is_hole_region(region))
-        region_polygons = ocrd_regions_to_region_polygons(
-            text_regions, page_image, page_coords
-        )
-        self.logger.debug(
-            "extracted %d text shell regions and %d text hole regions",
-            len(region_polygons),
-            num_holes,
-        )
-        page_array = np.array(page_image)
-
-        return [
-            (
-                region_polygon.region,
-                self._image_from_text_region(region_polygon, page_array),
+        region_images = []
+        for region in text_regions:
+            region_image, _ = self.workspace.image_from_segment(
+                region, page_image, page_coords, fill="white"
             )
-            for region_polygon in region_polygons
-        ]
+            self.logger.debug(
+                "text region %s: extracted crop size=%dx%d",
+                region.id,
+                region_image.width,
+                region_image.height,
+            )
+            region_images.append((region, region_image))
 
-    def _image_from_text_region(
-        self, region_polygon: RegionPolygon, page_array: np.ndarray
-    ) -> Image.Image:
-        region = region_polygon.region
-        polygon = region_polygon.polygon
-        self.logger.debug(
-            "text region %s: bbox=%s holes=%d",
-            region.id,
-            polygon.bounds,
-            len(polygon.interiors),
-        )
-        cropped_arr, _, _ = crop_polygon(page_array, polygon)
-        cropped_image = Image.fromarray(cropped_arr)
-        self.logger.debug(
-            "text region %s: crop size=%dx%d",
-            region.id,
-            cropped_image.width,
-            cropped_image.height,
-        )
-        return cropped_image
+        return region_images
 
     async def _ocr_region_images(
         self, region_images: Sequence[Tuple[object, Image.Image]]
