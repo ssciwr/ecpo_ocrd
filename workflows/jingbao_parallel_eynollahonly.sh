@@ -1,5 +1,7 @@
 # solution from codex on ocrd-core and ChatGPT
 
+# this approach works when loading Eynollah model inside setup() of the processor
+
 # get path to workspace from the command line argument
 
 WS="$1"

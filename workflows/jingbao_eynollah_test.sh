@@ -47,7 +47,7 @@ if [ ! -S "$SOCK" ]; then
     exit 1
 fi
 
-export OCRD_MAX_PARALLEL_PAGES=5
+export OCRD_MAX_PARALLEL_PAGES=8
 export CUDA_VISIBLE_DEVICES=0
 export OCRD_EXISTING_OUTPUT=ABORT
 export OCRD_MISSING_OUTPUT=ABORT
@@ -55,5 +55,5 @@ export OCRD_MISSING_OUTPUT=ABORT
 # try to run Eynollah inference with more than one parallel worker,
 # after moving model loading to inside process_page_pcgts
 ocrd-eynollah-inference -m "$METS" -U "$SOCK" \
-    -I OCR-D-IMG -O OCR-D-EYNOLLAH-TEST \
+    -I OCR-D-IMG -O OCR-D-EYNOLLAH-TEST-8 \
     -P model eynollah-scale-bin-20260325-artbound-noheadings
