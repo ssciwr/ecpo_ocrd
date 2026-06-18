@@ -31,7 +31,7 @@ classifiers = [
 ]
 dependencies = [
     "click",
-    "ocrd==3.3.0",
+    "ocrd>=3.7.0",
     "tqdm",
     "scikit-image",
     "paddleocr>=3.4.0",
