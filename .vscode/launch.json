@@ -1,0 +1,24 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "ocrd-ecpo-segment",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "ecpo_ocrd.ecpo_processor",
+            "cwd": "${workspaceFolder}/myworkspace",
+            "console": "integratedTerminal",
+            "args": [
+                "-l",
+                "DEBUG",
+                "-I",
+                "OCR-D-EYNOLLAH",
+                "-O",
+                "OCR-D-ECPO-DB"
+            ]
+        }
+    ]
+}

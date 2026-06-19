@@ -30,7 +30,6 @@ from ecpo_ocrd.refine import (
 
 import logging
 
-
 region_mapping = {
     # label: (subtype, region type, region label)
     "artificial_boundary": (None, LineDrawingRegionType, "LineDrawingRegion"),
@@ -46,6 +45,15 @@ class ECPOInferenceProcessor(Processor):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    @property
+    def executable(self) -> str:
+        """Return the OCR-D tool executable name explicitly.
+
+        This avoids relying on inspect.stack() to infer the runtime filename,
+        which breaks under debugpy/runpy because the outer frame is runpy.py.
+        """
+        return "ocrd-ecpo-segment"
 
     def setup(self) -> None:
         """Override setup of the Processor class to initialize the layout detector."""
