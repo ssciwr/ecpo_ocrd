@@ -11,7 +11,7 @@ PROCESSOR_SCRIPT="workflows/individual/jingbao_parallel_individual.sh"
 
 # usage
 if [[ "$WS" == "--help" || "$WS" == "-h" ]]; then
-    echo "Usage: $0 <path_to_workspace> <eynollah_env_name> <non_eynollah_env_name>"
+    echo "Usage: $0 <path_to_workspace> <eynollah_gpu_env_name> <non_eynollah_gpu_env_name>"
     exit 0
 fi
 

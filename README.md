@@ -10,7 +10,7 @@
 
 Our pipeline consists of the following steps:
 
-* `eynollah-inference`: Run Eynollah inference to get layout segmentation results from a fine-tuned Eynollah model. See [this training/fine-tuning instruction](https://github.com/ssciwr/ecpo-eynollah/blob/main/eynollah_training.md) for details.
+* `eynollah-inference`: Run Eynollah inference to get layout segmentation results from a fine-tuned Eynollah model. See [this training/fine-tuning instruction](https://github.com/ssciwr/ecpo-eynollah/blob/main/eynollah_training.md) for the details on our fine-tuned models.
 * `ecpo-segment`: Refine the layout segmentation results from Eynollah using PaddleOCR's layout analysis model.
 * `ecpo-ocr`: Run OCR on the text regions obtained from the previous step using VLLM.
 
@@ -24,13 +24,13 @@ cd ecpo_ocrd
 
 2. To install the repository's dependencies, there are two options, please choose just one of them:
 
-* `eynollah`: for running Eynollah inference
-* `non-eynollah`: for running non-Eynollah processes (e.g. PaddleOCR)
+* `eynollah-gpu`: for running Eynollah inference with GPU support (requires CUDA and cuDNN)
+* `non-eynollah-gpu`: for running non-GPU-Eynollah processes (e.g. Eynollah on CPU or PaddleOCR)
 
-For example, to install the dependencies for running the Eynollah inference part, use:
+For example, to install the dependencies for running the `eynollah-inference` and `ecpo-segment` with CPU , use:
 
 ```bash
-python -m pip install .[eynollah]
+python -m pip install .[non-eynollah-gpu]
 ```
 
 3. Then install relevant OCR-D tools with:
@@ -42,7 +42,7 @@ ecpo_ocrd install
 
 ## Usage
 
-Before doing anything, add the `bin` folder to `PATH`:
+**Before** doing anything, add the `bin` folder to `PATH`:
 
 ```bash
 export PATH=$PWD/bin:$PATH
@@ -89,7 +89,7 @@ A quick-and-dirty solution to run the whole pipeline with GPU is to create two `
 2. Install the Eynollah-related dependencies in this environment with:
 
 ```bash
-pip install .[eynollah]
+pip install .[eynollah-gpu]
 ```
 
 ### Non-Eynollah conda environment
@@ -99,7 +99,7 @@ Create the second conda environment and install dependencies for the rest of the
 ```bash
 conda create -n ecpo_non_eynollah python=3.10
 conda activate ecpo_non_eynollah
-pip install .[non-eynollah]
+pip install .[non-eynollah-gpu]
 ```
 
 ### Run the parallel script
@@ -108,7 +108,7 @@ After setting up the two conda environments and finishing the installation [abov
 
 ```bash
 # assuming you are in the repository root
-./workflows/jingbao_parallel_eynollah_paddle.sh <path_to_workspace>
+./workflows/jingbao_parallel_eynollah_paddle.sh <path_to_workspace> <eynollah_conda_env> <non_eynollah_conda_env>
 ```
 
 To run the last step `ecpo-ocr` with VLLM: TBU.
