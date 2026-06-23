@@ -4,7 +4,6 @@ import shutil
 import subprocess
 import venv
 
-
 _prefix = None
 
 
@@ -54,12 +53,10 @@ def install_ocrd_tool(
     # Ensure that a wrapper is written
     tool_path = _prefix / "bin" / tool
     with open(tool_path, "w") as f:
-        f.write(
-            f"""#!/bin/bash
+        f.write(f"""#!/bin/bash
 source "{str(env / 'bin' / 'activate')}"
 "{tool}" "$@"
-"""
-        )
+""")
     os.chmod(tool_path, 0o755)
 
     # Check that the tool is callable
@@ -74,11 +71,11 @@ def install(prefix):
     install_ocrd_tool("ocrd-segment-extract-regions", package="ocrd_segment")
     install_ocrd_tool("ocrd-skimage-denoise-raw", package="ocrd_wrap")
     install_ocrd_tool("ocrd-skimage-normalize", package="ocrd_wrap")
-    install_ocrd_tool(# this will use Eynollah 0.6.0 with our customized inference colors, Eynollah 0.7.0 creates tf_keras error
-        "ocrd-sbb-binarize", 
-        package="git+https://github.com/kimlee87/eynollah.git@new_inference_color", 
-        env_identifier="eynollah", 
-        models=["*"]
+    install_ocrd_tool(  # this will use Eynollah 0.6.0 with our customized inference colors, Eynollah 0.7.0 creates tf_keras error
+        "ocrd-sbb-binarize",
+        package="git+https://github.com/kimlee87/eynollah.git@new_inference_color",
+        env_identifier="eynollah",
+        models=["*"],
     )
     install_ocrd_tool("ocrd-cis-ocropy-denoise", package="ocrd_cis")
     install_ocrd_tool("ocrd-cis-ocropy-deskew", package="ocrd_cis")
@@ -91,7 +88,7 @@ def install(prefix):
     )
     install_ocrd_tool(
         "ocrd-eynollah-inference",
-        package="git+https://github.com/ssciwr/ocrd_eynollah.git@parallel_test",
+        package="git+https://github.com/ssciwr/ocrd_eynollah.git@main",
         env_identifier="eynollah",
         models=["*"],
     )
