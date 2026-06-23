@@ -25,7 +25,8 @@ conda run --no-capture-output -n "$ENV_EYNOLLAH" \
     OCR-D-EYNOLLAH \
     -P model eynollah-scale-bin-20260325-artbound-noheadings
 end_eynollah=$(date +%s)
-echo "Eynollah inference step completed in $((end_eynollah - start_eynollah)) seconds"
+runtime_eynollah=$((end_eynollah - start_eynollah))
+echo "Eynollah inference step completed in $runtime_eynollah seconds"
 
 echo "Running ECPO segmentation step..."
 start_ecpo=$(date +%s)
@@ -36,4 +37,7 @@ conda run --no-capture-output -n "$ENV_NON_EYNOLLAH" \
     OCR-D-EYNOLLAH \
     OCR-D-ECPO
 end_ecpo=$(date +%s)
-echo "ECPO segmentation step completed in $((end_ecpo - start_ecpo)) seconds"
+runtime_ecpo=$((end_ecpo - start_ecpo))
+echo "ECPO segmentation step completed in $runtime_ecpo seconds"
+echo "Again, Eynollah inference step completed in $runtime_eynollah seconds"
+echo "Total runtime: $((runtime_eynollah + runtime_ecpo)) seconds"
