@@ -26,6 +26,8 @@ def create(workspace=None, sds=None, data=None, sample=None):
     # Create the workspace directory
     workspace.mkdir(parents=True, exist_ok=True)
 
+    ws_location = str(pathlib.Path(workspace).resolve())
+
     # Gather images from SDS
     images = list((sds / "cats-ecpo" / "ecpo" / data).glob("**/*.tif"))
 
@@ -41,7 +43,7 @@ def create(workspace=None, sds=None, data=None, sample=None):
 
     with chdir(workspace):
         # Create a folder in the workspace for the original images
-        (pathlib.Path(".") / "OCR-D-IMG").mkdir(parents=True, exist_ok=True)
+        # (pathlib.Path(".") / "OCR-D-IMG").mkdir(parents=True, exist_ok=True)
 
         # Initialize the workspace
         subprocess.run(["ocrd", "workspace", "init", str(workspace)], check=True)
@@ -49,7 +51,15 @@ def create(workspace=None, sds=None, data=None, sample=None):
 
         # Add the images to the workspace
         for i, image in tqdm.tqdm(enumerate(images)):
-            copied = shutil.copy(image, pathlib.Path(".") / "OCR-D-IMG" / image.name)
+            # no copy to save disk space, but add to workspace with original path
+            # copied = shutil.copy(image, pathlib.Path(".") / "OCR-D-IMG" / image.name)
+
+            # find relative path of image to workspace
+            # otherwise, ocrd will create a folder in the worspace and copy image there
+            img_location = str(pathlib.Path(image).resolve())
+            img_relative_path = os.path.relpath(img_location, start=ws_location)
+
+            # add image info into workspace and mets.xml
             subprocess.run(
                 [
                     "ocrd",
@@ -63,7 +73,7 @@ def create(workspace=None, sds=None, data=None, sample=None):
                     f"OCR-D-IMG-{i+1:04d}",
                     "-m",
                     "image/tiff",
-                    str(copied),
+                    str(img_relative_path),
                 ],
                 check=True,
             )

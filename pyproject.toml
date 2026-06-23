@@ -31,13 +31,25 @@ classifiers = [
 ]
 dependencies = [
     "click",
-    "ocrd==3.3.0",
     "openai",
     "tqdm",
     "scikit-image",
-    "gdown==5.2.0",
+]
+
+# the following two options should NOT be used together
+# for eynollah option, see README to also install CUDA 11.8 and cuDNN 8.6
+[project.optional-dependencies]
+eynollah = [
+    "ocrd>=3.3.0",
     "numpy<1.24.0",
-    "tensorflow<2.13",
+    "tensorflow[and-cuda]==2.12",
+]
+non-eynollah = [
+    "ocrd>=3.7.0",
+    "numpy>=1.24.0",
+    "paddleocr==3.4.0",
+    "paddlepaddle==3.2.0",
+    "paddlex==3.4.2",
 ]
 
 [project.scripts]
