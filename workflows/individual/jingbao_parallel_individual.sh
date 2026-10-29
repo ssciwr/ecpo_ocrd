@@ -3,9 +3,25 @@ set -euo pipefail
 
 # solution from codex on ocrd-core
 
-# get path to workspace from the command line argument
-# defaults to current directory if not provided
-WS="$(realpath "${1:-.}")"
+# usage
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    echo "Usage: $0 [gpu_id_optional] <path_to_workspace> <processor> <input_group> <output_group> [processor args...]"
+    exit 0
+fi
+
+# optional single GPU id (e.g. 1) as first argument, defaults to GPU 0
+# (Eynollah and PaddleOCR only use one GPU for now)
+if [[ "${1:-}" =~ ^[0-9]+$ ]]; then
+    GPU_ID="$1"
+    shift
+elif [[ "${1:-}" =~ ^[0-9]+(,[0-9]+)+$ ]]; then
+    echo "Only a single GPU id is supported, got '$1'" >&2
+    exit 1
+else
+    GPU_ID=0
+fi
+
+WS="$(realpath "${1:?Missing path to workspace}")"
 PROCESSOR="${2:?Missing processor name}"
 INPUT_GROUP="${3:?Missing input file group}"
 OUTPUT_GROUP="${4:?Missing output file group}"
@@ -53,7 +69,7 @@ if [ ! -S "$SOCK" ]; then
 fi
 
 export OCRD_MAX_PARALLEL_PAGES=8
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES="$GPU_ID"
 export OCRD_EXISTING_OUTPUT=ABORT
 export OCRD_MISSING_OUTPUT=ABORT
 
