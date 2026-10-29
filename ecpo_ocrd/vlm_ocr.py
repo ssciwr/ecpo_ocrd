@@ -25,6 +25,10 @@ Your result needs to fulfill **all** of these constraints:
 * Denote numbers exactly like in the image, not in english writing.
 * The result needs to follow the {reading_order} reading order.
 * If the text does not start in the top-right corner, start it in the right-most column.
+* Only output the transcribed text, without any comments or explanations.
+* If the image contains no legible text (e.g. too blurry, blank or only images),
+  do not guess and do not answer in Chinese. Instead, reply with exactly one line
+  in English: "[OCR failed: <short reason in English>]"
 
 Double-check your response so that it fulfills all constraints.
 """
