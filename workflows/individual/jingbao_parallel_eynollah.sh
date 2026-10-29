@@ -3,12 +3,20 @@ set -euo pipefail
 
 # solution from codex on ocrd-core
 
+# optional GPU id (e.g. 0 or 0,1) as first argument, defaults to GPU 0
+if [[ "${1:-}" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+    GPU_ID="$1"
+    shift
+else
+    GPU_ID=0
+fi
+
 # get path to workspace from the command line argument
 # defaults to current directory if not provided
 WS="${1:-.}"
 
 if [ -z "$WS" ]; then
-  echo "Usage: $0 <path_to_workspace>"
+  echo "Usage: $0 [gpu_id_optional] <path_to_workspace>"
   exit 1
 fi
 
@@ -51,7 +59,7 @@ if [ ! -S "$SOCK" ]; then
 fi
 
 export OCRD_MAX_PARALLEL_PAGES=8
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES="$GPU_ID"
 export OCRD_EXISTING_OUTPUT=ABORT
 export OCRD_MISSING_OUTPUT=ABORT
 
