@@ -150,18 +150,36 @@ class VLMOCRProcessor(Processor):
             region_image.height,
         )
         image_data_url = self._image_data_url(region_image)
-        reading_order = await self._vllm_request(
-            READING_ORDER_PROMPT, image_data_url, "reading-order", region_id
-        )
-        self.logger.debug(
-            "text region %s: detected reading order %r", region_id, reading_order
-        )
-        text = await self._vllm_request(
-            OCR_PROMPT_TEMPLATE.format(reading_order=reading_order),
-            image_data_url,
-            "ocr",
-            region_id,
-        )
+        # Handle failed requests per region: otherwise one bad region fails the
+        # whole page, and openai's exceptions cannot even be passed back from the
+        # parallel page workers, which hides the actual error message.
+        try:
+            reading_order = await self._vllm_request(
+                READING_ORDER_PROMPT, image_data_url, "reading-order", region_id
+            )
+            self.logger.debug(
+                "text region %s: detected reading order %r", region_id, reading_order
+            )
+            text = await self._vllm_request(
+                OCR_PROMPT_TEMPLATE.format(reading_order=reading_order),
+                image_data_url,
+                "ocr",
+                region_id,
+            )
+        except openai.APIStatusError as e:
+            self.logger.error(
+                "text region %s (%dx%d): VLM request failed with status %d: %s",
+                region_id,
+                region_image.width,
+                region_image.height,
+                e.status_code,
+                e.message,
+            )
+            return f"[OCR failed: request error {e.status_code}]"
+        except openai.APIError as e:
+            # e.g. the server is not reachable: stop instead of marking every
+            # region as failed, with an exception that the page workers can pass on
+            raise RuntimeError(f"VLM request for region {region_id} failed: {e}") from None
         self.logger.debug(
             "text region %s: OCR returned %d characters", region_id, len(text)
         )
