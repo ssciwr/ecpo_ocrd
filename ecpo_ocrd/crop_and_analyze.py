@@ -2,7 +2,7 @@
 Code suggestioned by Claude and checked by human.
 
 Usage:
-    python ecpo_ocrd/crop_polygon.py <xml_folder> <output_folder> [--min-size 10] [--white-threshold 0.95] [--black-threshold 0.95] [--jobs 4]
+    python ecpo_ocrd/crop_and_analyze.py <xml_folder> <output_folder> [--min-size 10] [--white-threshold 0.95] [--black-threshold 0.95] [--jobs 4]
         [--image-folder <path to sds_ecpo>]
 
 For each PAGE-XML file in <xml_folder>, the page image is downloaded from the
@@ -43,6 +43,8 @@ CSV_FIELDS = [
     "image",
     "xml_file",
     "region_id",
+    # centre of the region in % of the page, from the top/from the left, e.g. "70/50"
+    "pos_top_left",
     "width",
     "height",
     "white_ratio",
@@ -80,6 +82,13 @@ def crop_polygon(
     region = image.crop(box).convert("RGB")
     background = Image.new("RGB", region.size, fill)
     return Image.composite(region, background, mask)
+
+
+def relative_position(box: tuple, page_width: int, page_height: int) -> str:
+    """Centre of the box in % of the page, as "<from top>/<from left>", e.g. "70/50"."""
+    top = round(100 * (box[1] + box[3]) / 2 / page_height)
+    left = round(100 * (box[0] + box[2]) / 2 / page_width)
+    return f"{top}/{left}"
 
 
 def white_black_ratio(crop: Image.Image, mask: Image.Image) -> tuple[float, float]:
@@ -176,6 +185,8 @@ def process_xml(
     root = ET.parse(xml_path).getroot()
     ns = root.tag.split("}")[0] + "}"
     page = root.find(f"{ns}Page")
+    page_width = int(page.get("imageWidth"))
+    page_height = int(page.get("imageHeight"))
 
     # one folder per image, e.g. jb_3918_1939-08-21_0005to0008
     image_dir = output_dir / Path(page.get("imageFilename")).stem
@@ -211,6 +222,7 @@ def process_xml(
                     "image": image_dir.name,
                     "xml_file": xml_path.name,
                     "region_id": region_id,
+                    "pos_top_left": relative_position(box, page_width, page_height),
                     "width": mask.width,
                     "height": mask.height,
                     "white_ratio": round(white, 3),
