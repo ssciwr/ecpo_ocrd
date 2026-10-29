@@ -9,10 +9,14 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     exit 0
 fi
 
-# optional GPU id (e.g. 0 or 0,1) as first argument, defaults to GPU 0
-if [[ "${1:-}" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+# optional single GPU id (e.g. 1) as first argument, defaults to GPU 0
+# (Eynollah and PaddleOCR only use one GPU for now)
+if [[ "${1:-}" =~ ^[0-9]+$ ]]; then
     GPU_ID="$1"
     shift
+elif [[ "${1:-}" =~ ^[0-9]+(,[0-9]+)+$ ]]; then
+    echo "Only a single GPU id is supported, got '$1'" >&2
+    exit 1
 else
     GPU_ID=0
 fi
