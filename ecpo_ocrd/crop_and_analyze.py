@@ -672,8 +672,9 @@ def plot_stats(
         title += f", {len(unfailed_rows):,} unfailed regions"
 
     fig.suptitle(title, x=0.01, ha="left", fontsize=13)
-    # leave room at the top for the suptitle
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    # leave room at the top for the suptitle; h_pad: room between the rows, so
+    # that the two-line titles don't run into the axis labels above them
+    fig.tight_layout(rect=(0, 0, 1, 0.97), h_pad=4)
     # "tight" so that the legends next to the pies are not cut off
     fig.savefig(path, dpi=150, facecolor=surface, bbox_inches="tight")
     plt.close(fig)
