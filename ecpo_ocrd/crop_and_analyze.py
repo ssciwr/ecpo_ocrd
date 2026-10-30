@@ -2,23 +2,39 @@
 Code suggestioned by Claude and checked by human.
 
 Usage:
-    python ecpo_ocrd/crop_and_analyze.py <xml_folder> <output_folder> [--min-size 10] [--white-threshold 0.95] [--black-threshold 0.95] [--jobs 4]
+    python ecpo_ocrd/crop_and_analyze.py <xml_folder> <output_folder>
+        [--min-size 10]
+        [--white-threshold 0.95]
+        [--black-threshold 0.95]
+        [--jobs 4]
         [--image-folder <path to sds_ecpo>]
+        [--min-repeat-times 50]
 
 For each PAGE-XML file in <xml_folder>, the page image is downloaded from the
-ECPO IIIF server into <output_folder>/<image name>/, and every text region whose
-text starts with "[OCR failed" is saved there as <region id>.jpg. This
-includes both the failures reported by the VLM and the failed requests
-("[OCR failed: request error <status code>]"). With
---image-folder, the original images are read from that folder instead and
-nothing is downloaded. Crops that
-already exist are not cut again. The XML files are processed in parallel.
+ECPO IIIF server into <output_folder>/<image name>/,
+* every text region whose text starts with "[OCR failed" is saved there as <region id>.jpg.
+This includes both the failures reported by the VLM and the failed requests
+("[OCR failed: request error <status code>]").
+* Regions whose text got stuck repeating a few characters (until another character is encountered
+or the maximum output length is reached) are cut out as well,
+if one unit repeats itself at least --min-repeat-times times in a row.
+
+With --image-folder, the original images are read from that folder instead and
+nothing is downloaded. Crops that already exist are not cut again.
+
+The XML files are processed in parallel.
 
 Afterwards, <output_folder>/failed_regions_<settings>.csv lists every failed region, with
-flags whether one of its edges is too small or it is almost white/black and
-the status code of failed requests, and
+flags:
+* whether one of its edges is too small or
+* it is almost white/black and
+* the status code of failed requests or
+* the repeated unit and how many times it repeats in a row, and
+* the OCR text
+
 <output_folder>/failed_regions_stats_<settings>.png shows the statistics.
-<settings> holds the options the flags depend on, e.g. "minsize10_white095_black095",
+<settings> holds the options the results depend on, e.g.
+"minsize10_white095_black095_repeat50",
 so that runs with different options don't overwrite each other.
 """
 
@@ -39,6 +55,8 @@ BASE_LINK = "https://ecpo.cats.uni-heidelberg.de/fcgi-bin/iipsrv.fcgi?IIIF=/ecpo
 FAILED_PREFIX = "[OCR failed"
 # written by vlm_ocr.py when the request to the VLM fails with an HTTP status
 REQUEST_ERROR_RE = re.compile(r"\[OCR failed: request error (\d+)\]")
+# a unit of up to 10 characters (including line breaks), repeated right after itself
+REPEAT_RE = re.compile(r"(.{1,10}?)\1+", re.DOTALL)
 
 # grey levels (0-255) from which a pixel counts as white or black;
 # paper in the scans is ~235-255, printed ink only ~130-150
@@ -62,15 +80,25 @@ CSV_FIELDS = [
     "almost_black",
     # HTTP status code if the request failed, empty if the VLM reported the failure
     "request_status",
+    # the unit repeated most often in a row, e.g. "，" repeated 1012 times;
+    # both are only filled if the unit repeats often enough to count as
+    # repetition
+    "most_repeated_unit",
+    "repeat_times",
     "ocr_text",
 ]
 
 
-def settings_suffix(min_size: int, white_threshold: float, black_threshold: float) -> str:
-    """Options in a form usable in file names, e.g. "minsize10_white095_black095"."""
+def settings_suffix(
+    min_size: int, white_threshold: float, black_threshold: float, min_repeat_times: int
+) -> str:
+    """Options in a form usable in file names.
+
+    E.g. "minsize10_white095_black095_repeat50".
+    """
     white = f"{white_threshold:.2f}".replace(".", "")
     black = f"{black_threshold:.2f}".replace(".", "")
-    return f"minsize{min_size}_white{white}_black{black}"
+    return f"minsize{min_size}_white{white}_black{black}_repeat{min_repeat_times}"
 
 
 def parse_points(points: str) -> list[tuple[int, int]]:
@@ -123,6 +151,21 @@ def request_status(text: str) -> str:
     return match.group(1) if match else ""
 
 
+def most_repeat(text: str) -> tuple[str, int]:
+    """Return the unit repeated most often in a row, and how many times it occurs.
+
+    The run ends where another unit appears or the text ends, e.g. "abc，，，，d"
+    gives ("，", 4) and "一元二角\\n一元二角\\n" gives ("一元二角\\n", 2). Text
+    without any unit directly repeated gives ("", 0).
+    """
+    unit, times = "", 0
+    for match in REPEAT_RE.finditer(text):
+        run_times = (match.end() - match.start()) // len(match.group(1))
+        if run_times > times:
+            unit, times = match.group(1), run_times
+    return unit, times
+
+
 def image_url(image_filename: str) -> str:
     """Build the IIIF URL from the part of imageFilename starting at "jingbao"."""
     start = image_filename.find("jingbao/")
@@ -143,15 +186,20 @@ def local_image_path(image_filename: str, image_folder: Path) -> Path:
     return image_folder.joinpath(*parts[1:])
 
 
-def failed_regions(page) -> list[tuple[str, str, str]]:
-    """Return (region id, points, text) of all text regions whose OCR failed."""
+def failed_regions(page, min_repeat_times: int) -> list[tuple[str, str, str]]:
+    """Return (region id, points, text) of all text regions whose OCR failed.
+
+    Besides "[OCR failed ..." this includes texts where the VLM got stuck
+    repeating the same few characters at least min_repeat_times times in a row.
+    """
     ns = page.tag.split("}")[0] + "}"
     result = []
     for region in page.iter(f"{ns}TextRegion"):
         unicode = region.find(f"{ns}TextEquiv/{ns}Unicode")
-        if unicode is not None and (unicode.text or "").startswith(FAILED_PREFIX):
+        text = (unicode.text or "") if unicode is not None else ""
+        if text.startswith(FAILED_PREFIX) or most_repeat(text)[1] >= min_repeat_times:
             points = region.find(f"{ns}Coords").get("points")
-            result.append((region.get("id"), points, unicode.text))
+            result.append((region.get("id"), points, text))
     return result
 
 
@@ -203,6 +251,7 @@ def process_xml(
     min_size: int,
     white_threshold: float,
     black_threshold: float,
+    min_repeat_times: int,
     image_folder: Path = None,
 ) -> list[dict]:
     root = ET.parse(xml_path).getroot()
@@ -216,7 +265,7 @@ def process_xml(
     image_dir.mkdir(parents=True, exist_ok=True)
     page_image = PageImage(page, image_dir, xml_path.name, image_folder)
 
-    regions = failed_regions(page)
+    regions = failed_regions(page, min_repeat_times)
     rows = []
     n_cropped = 0
     try:
@@ -240,6 +289,10 @@ def process_xml(
                 n_cropped += 1
 
             white, black = white_black_ratio(crop, mask)
+            unit, repeat_times = most_repeat(text)
+            if text.startswith(FAILED_PREFIX) or repeat_times < min_repeat_times:
+                # not a repetition so leave both empty
+                unit, repeat_times = "", ""
             rows.append(
                 {
                     "image": image_dir.name,
@@ -254,6 +307,9 @@ def process_xml(
                     "almost_white": white >= white_threshold,
                     "almost_black": black >= black_threshold,
                     "request_status": request_status(text),
+                    # escape line breaks, so that the unit stays readable in the CSV
+                    "most_repeated_unit": unit.replace("\n", "\\n"),
+                    "repeat_times": repeat_times,
                     "ocr_text": text,
                 }
             )
@@ -278,9 +334,11 @@ def category(row: dict) -> str:
 
 
 def failure_source(row: dict) -> str:
-    """Who reported the failure: the VLM itself, or the request with its status code."""
+    """How the OCR failed: reported by the VLM, a failed request, or repetition."""
     if row["request_status"]:
         return f"Request error {row['request_status']}"
+    if row["most_repeated_unit"]:
+        return "Repetition"
     return "Reported by VLM"
 
 
@@ -312,9 +370,19 @@ def plot_stats(
     # bar charts and histograms with one series
     color = "#2a78d6"
     # categorical colors for the pies and the stacked bars, assigned in this order
-    # (dark blue, orange, aqua, yellow, magenta, green); dark blue instead of the
-    # blue above, so that the pies don't look like they belong to the bar charts
-    series_colors = ["#184f95", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]
+    # (dark blue, orange, aqua, yellow, magenta, green, violet, red); dark blue
+    # instead of the blue above, so that the pies don't look like they belong to
+    # the bar charts
+    series_colors = [
+        "#184f95",
+        "#eb6834",
+        "#1baf7a",
+        "#eda100",
+        "#e87ba4",
+        "#008300",
+        "#6250d6",
+        "#e34948",
+    ]
     dark_colors = {"#184f95", "#008300"}  # need white text on top
     plt.rcParams.update(
         {
@@ -328,13 +396,17 @@ def plot_stats(
     )
 
     # first line: the two pie charts, second line: the three bar charts/histograms
+    # the cross-tab has one bar per source, give it more room when there are
+    # many status codes
+    crosstab_height = max(1, len({failure_source(row) for row in rows}) / 6)
     fig, axes = plt.subplot_mosaic(
         [
             ["category", "category", "category", "source", "source", "source"],
             ["flags", "flags", "crosstab", "crosstab", "crosstab", "crosstab"],
             ["size", "size", "size", "per_image", "per_image", "per_image"],
         ],
-        figsize=(18, 15),
+        height_ratios=[1, crosstab_height, 1],
+        figsize=(18, 10 + 5 * crosstab_height),
         facecolor=surface,
     )
     for name, ax in axes.items():
@@ -350,20 +422,31 @@ def plot_stats(
 
     def pie(ax, labels: list[str], values: list[int], title: str) -> None:
         """Pie chart with the counts in the legend; slices below 1% get no label."""
+        # more slices than colors (many status codes): the colors start over,
+        # hatched, so that neighbouring slices never look the same
         wedges, _ = ax.pie(
             values,
-            colors=series_colors[: len(values)],
+            colors=[series_colors[i % len(series_colors)] for i in range(len(values))],
             startangle=90,
             counterclock=False,
             wedgeprops={"edgecolor": surface, "linewidth": 2},
         )
+        for wedge in wedges[len(series_colors) :]:
+            wedge.set_hatch("//")
+        n_outside = 0
         for wedge, value in zip(wedges, values):
             if value / n < 0.01:
                 continue
             angle = np.deg2rad((wedge.theta1 + wedge.theta2) / 2)
-            # the label does not fit into thin slices, put it outside of the pie
+            # the label does not fit into thin slices, put it outside of the pie;
+            # alternate the distance, so that labels of neighbouring thin slices
+            # don't overlap
             inside = value / n >= 0.05
-            radius = 0.7 if inside else 1.12
+            if inside:
+                radius = 0.7
+            else:
+                radius = 1.12 if n_outside % 2 == 0 else 1.28
+                n_outside += 1
             ax.text(
                 radius * np.cos(angle),
                 radius * np.sin(angle),
@@ -375,12 +458,16 @@ def plot_stats(
             )
         ax.legend(
             wedges,
-            [f"{label}: {v:,} ({100 * v / n:.1f}%)" for label, v in zip(labels, values)],
+            [
+                f"{label}: {v:,} ({100 * v / n:.1f}%)"
+                for label, v in zip(labels, values)
+            ],
             loc="center left",
             bbox_to_anchor=(1, 0.5),
             frameon=False,
         )
-        ax.set_title(title, loc="left", fontsize=11)
+        # pad: room for the labels of thin slices outside of the pie
+        ax.set_title(title, loc="left", fontsize=11, pad=24)
         ax.set_aspect("equal")
 
     # 1) why did the regions fail? one category per region
@@ -400,23 +487,23 @@ def plot_stats(
         f"or ≥ {black_threshold:.0%} black pixels)",
     )
 
-    # 2) did the VLM report the failure, or did the request fail?
+    # 2) did the VLM report the failure, did the request fail, or did the VLM
+    # get stuck repeating itself?
     counts = Counter(failure_source(row) for row in rows)
+    fixed = ["Reported by VLM", "Repetition"]
     request_errors = sorted(
-        (label for label in counts if label != "Reported by VLM"),
+        (label for label in counts if label not in fixed),
         key=lambda label: (-counts[label], int(label.split()[-1])),
     )
-    # at most 6 slices: fold the rarest status codes into one slice
-    labels = ["Reported by VLM"] + request_errors[:4]
+    # one slice per status code, most frequent first
+    labels = fixed + request_errors
     values = [counts[label] for label in labels]
-    if len(request_errors) > 4:
-        labels.append("Other request errors")
-        values.append(sum(counts[label] for label in request_errors[4:]))
     pie(
         axes["source"],
         labels,
         values,
-        "Failed regions by source\n(HTTP status code of failed requests)",
+        "Failed regions by source\n(VLM's own failure message, repeated "
+        "characters, HTTP status code of failed requests)",
     )
     sources = labels
 
@@ -454,8 +541,6 @@ def plot_stats(
     pairs = Counter()
     for row in rows:
         source = failure_source(row)
-        if source not in sources:
-            source = "Other request errors"
         source_counts[source] += 1
         pairs[source, category(row)] += 1
     y_labels = [f"{source}\n({source_counts[source]:,} regions)" for source in sources]
@@ -580,6 +665,15 @@ def plot_stats(
     help="Folder with the original images, e.g. the path to sds_ecpo for "
     'imageFilename="../sds_ecpo/cats-ecpo/...". If given, no images are downloaded',
 )
+@click.option(
+    "--min-repeat-times",
+    type=click.IntRange(min=2),
+    default=50,
+    show_default=True,
+    help="A text counts as repetition if a unit of up to 10 characters "
+    "repeats itself at least this many times in a row, until another unit "
+    "appears or the text ends",
+)
 def cli(
     xml_folder,
     output_folder,
@@ -588,6 +682,7 @@ def cli(
     black_threshold,
     jobs,
     image_folder,
+    min_repeat_times,
 ):
     """Crop failed OCR regions of all PAGE-XML files in XML_FOLDER into OUTPUT_FOLDER."""
     xml_files = sorted(xml_folder.glob("*.xml"))
@@ -605,6 +700,7 @@ def cli(
                 min_size,
                 white_threshold,
                 black_threshold,
+                min_repeat_times,
                 image_folder,
             ): xml_path
             for xml_path in xml_files
@@ -621,7 +717,9 @@ def cli(
     # keep the CSV in file order, independent of which job finished first
     rows = [row for xml_path in xml_files for row in rows_per_file.get(xml_path, [])]
 
-    suffix = settings_suffix(min_size, white_threshold, black_threshold)
+    suffix = settings_suffix(
+        min_size, white_threshold, black_threshold, min_repeat_times
+    )
     csv_path = output_folder / CSV_NAME.format(suffix)
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
