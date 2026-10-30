@@ -25,6 +25,10 @@ Your result needs to fulfill **all** of these constraints:
 * Denote numbers exactly like in the image, not in english writing.
 * The result needs to follow the {reading_order} reading order.
 * If the text does not start in the top-right corner, start it in the right-most column.
+* Only output the transcribed text, without any comments or explanations.
+* If the image contains no legible text (e.g. too blurry, blank or only images),
+  do not guess and do not answer in Chinese. Instead, reply with exactly one line
+  in English: "[OCR failed: <short reason in English>]"
 
 Double-check your response so that it fulfills all constraints.
 """
@@ -57,6 +61,8 @@ class VLMOCRProcessor(Processor):
             base_url=self.parameter["server"],
         )
         self.model = self.parameter["model"]
+        self.min_edge = self.parameter["min_edge"]
+        self.repetition_penalty = self.parameter["repetition_penalty"]
         self.request_semaphore = BoundedSemaphore(REQUEST_SEMAPHORE_LIMIT)
         self.logger.info(
             "initialized VLM OCR client for model %s at %s with %d shared request slots",
@@ -139,6 +145,21 @@ class VLMOCRProcessor(Processor):
         return region_texts
 
     async def _ocr_region_image(self, region_id: str, region_image: Image.Image) -> str:
+        # The VLM cannot read crops with a very short edge (vLLM even rejects them
+        # with status 400), so don't send them. The marker keeps them countable
+        # for the analysis of failed regions.
+        if min(region_image.size) < self.min_edge:
+            self.logger.info(
+                "text region %s (%dx%d): shorter edge below min_edge %d, skipping OCR",
+                region_id,
+                region_image.width,
+                region_image.height,
+                self.min_edge,
+            )
+            return (
+                f"[OCR skipped: one edge too small "
+                f"({region_image.width}x{region_image.height} px)]"
+            )
         self.logger.debug(
             "text region %s: encoding crop for VLM request (%dx%d)",
             region_id,
@@ -146,18 +167,36 @@ class VLMOCRProcessor(Processor):
             region_image.height,
         )
         image_data_url = self._image_data_url(region_image)
-        reading_order = await self._vllm_request(
-            READING_ORDER_PROMPT, image_data_url, "reading-order", region_id
-        )
-        self.logger.debug(
-            "text region %s: detected reading order %r", region_id, reading_order
-        )
-        text = await self._vllm_request(
-            OCR_PROMPT_TEMPLATE.format(reading_order=reading_order),
-            image_data_url,
-            "ocr",
-            region_id,
-        )
+        # Handle failed requests per region: otherwise one bad region fails the
+        # whole page, and openai's exceptions cannot even be passed back from the
+        # parallel page workers, which hides the actual error message.
+        try:
+            reading_order = await self._vllm_request(
+                READING_ORDER_PROMPT, image_data_url, "reading-order", region_id
+            )
+            self.logger.debug(
+                "text region %s: detected reading order %r", region_id, reading_order
+            )
+            text = await self._vllm_request(
+                OCR_PROMPT_TEMPLATE.format(reading_order=reading_order),
+                image_data_url,
+                "ocr",
+                region_id,
+            )
+        except openai.APIStatusError as e:
+            self.logger.error(
+                "text region %s (%dx%d): VLM request failed with status %d: %s",
+                region_id,
+                region_image.width,
+                region_image.height,
+                e.status_code,
+                e.message,
+            )
+            return f"[OCR failed: request error {e.status_code}]"
+        except openai.APIError as e:
+            # e.g. the server is not reachable: stop instead of marking every
+            # region as failed, with an exception that the page workers can pass on
+            raise RuntimeError(f"VLM request for region {region_id} failed: {e}") from None
         self.logger.debug(
             "text region %s: OCR returned %d characters", region_id, len(text)
         )
@@ -188,7 +227,7 @@ class VLMOCRProcessor(Processor):
                 max_tokens=1024,
                 temperature=0.0,
                 extra_body={
-                    "repetition_penalty": 1.0,
+                    "repetition_penalty": self.repetition_penalty,
                     "top_k": 0,
                     "top_p": 1.0,
                 },
