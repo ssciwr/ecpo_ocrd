@@ -297,6 +297,7 @@ def plot_stats(
 
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        import numpy as np
     except ImportError:
         click.echo("matplotlib is not installed, skipping the plot", err=True)
         return False
@@ -309,6 +310,8 @@ def plot_stats(
         "#c3c2b7",
     )
     color = "#2a78d6"
+    # categorical colors, assigned in this order (blue, orange, aqua, yellow, magenta, green)
+    series_colors = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]
     plt.rcParams.update(
         {
             "font.size": 10,
@@ -320,9 +323,20 @@ def plot_stats(
         }
     )
 
-    fig, axes = plt.subplots(1, 4, figsize=(21, 4.8), facecolor=surface)
-    for ax in axes:
+    # first line: the two pie charts, second line: the three bar charts/histograms
+    fig, axes = plt.subplot_mosaic(
+        [
+            ["category", "category", "category", "source", "source", "source"],
+            ["flags", "flags", "crosstab", "crosstab", "crosstab", "crosstab"],
+            ["size", "size", "size", "per_image", "per_image", "per_image"],
+        ],
+        figsize=(18, 15),
+        facecolor=surface,
+    )
+    for name, ax in axes.items():
         ax.set_facecolor(surface)
+        if name in ("category", "source"):
+            continue
         ax.spines[["top", "right"]].set_visible(False)
         ax.grid(axis="y", color=grid, linewidth=0.8)
         ax.set_axisbelow(True)
@@ -330,11 +344,83 @@ def plot_stats(
     n = len(rows)
     n_images = len({row["image"] for row in rows})
 
-    # 1) why did the regions fail?
-    ax = axes[0]
-    labels = ["Too small", "Almost white", "Almost black", "Other (has content)"]
+    def pie(ax, labels: list[str], values: list[int], title: str) -> None:
+        """Pie chart with the counts in the legend; slices below 1% get no label."""
+        wedges, _ = ax.pie(
+            values,
+            colors=series_colors[: len(values)],
+            startangle=90,
+            counterclock=False,
+            wedgeprops={"edgecolor": surface, "linewidth": 2},
+        )
+        for wedge, value in zip(wedges, values):
+            if value / n < 0.01:
+                continue
+            angle = np.deg2rad((wedge.theta1 + wedge.theta2) / 2)
+            # the label does not fit into thin slices, put it outside of the pie
+            inside = value / n >= 0.05
+            radius = 0.7 if inside else 1.12
+            ax.text(
+                radius * np.cos(angle),
+                radius * np.sin(angle),
+                f"{100 * value / n:.0f}%",
+                ha="center",
+                va="center",
+                color="white" if inside else ink,
+                fontweight="bold",
+            )
+        ax.legend(
+            wedges,
+            [f"{label}: {v:,} ({100 * v / n:.1f}%)" for label, v in zip(labels, values)],
+            loc="center left",
+            bbox_to_anchor=(1, 0.5),
+            frameon=False,
+        )
+        ax.set_title(title, loc="left", fontsize=11)
+        ax.set_aspect("equal")
+
+    # 1) why did the regions fail? one category per region
+    categories = ["Too small", "Almost white", "Almost black", "Other (has content)"]
     counts = Counter(category(row) for row in rows)
+    pie(
+        axes["category"],
+        categories,
+        [counts[label] for label in categories],
+        f"Failed regions by category, one per region in this order\n"
+        f"(shorter side < {min_size} px, ≥ {white_threshold:.0%} white "
+        f"or ≥ {black_threshold:.0%} black pixels)",
+    )
+
+    # 2) did the VLM report the failure, or did the request fail?
+    counts = Counter(failure_source(row) for row in rows)
+    request_errors = sorted(
+        (label for label in counts if label != "Reported by VLM"),
+        key=lambda label: (-counts[label], int(label.split()[-1])),
+    )
+    # at most 6 slices: fold the rarest status codes into one slice
+    labels = ["Reported by VLM"] + request_errors[:4]
     values = [counts[label] for label in labels]
+    if len(request_errors) > 4:
+        labels.append("Other request errors")
+        values.append(sum(counts[label] for label in request_errors[4:]))
+    pie(
+        axes["source"],
+        labels,
+        values,
+        "Failed regions by source\n(HTTP status code of failed requests)",
+    )
+    sources = labels
+
+    # 3) each flag on its own, a region can have several of them
+    ax = axes["flags"]
+    flags = [
+        ("Too small", "too_small"),
+        ("Almost white", "almost_white"),
+        ("Almost black", "almost_black"),
+    ]
+    labels = [label for label, _ in flags] + ["None of these"]
+    values = [sum(row[key] for row in rows) for _, key in flags]
+    values.append(sum(not any(row[key] for _, key in flags) for row in rows))
     bars = ax.barh(labels[::-1], values[::-1], color=color, height=0.6)
     ax.bar_label(
         bars,
@@ -346,15 +432,66 @@ def plot_stats(
     ax.grid(axis="y", visible=False)
     ax.grid(axis="x", color=grid, linewidth=0.8)
     ax.set_title(
-        f"Failed regions by category\n(shorter side < {min_size} px, "
-        f"≥ {white_threshold:.0%} white or ≥ {black_threshold:.0%} black pixels)",
+        "Failed regions per flag\n(a region can have several flags)",
         loc="left",
         fontsize=11,
     )
     ax.set_xlabel("Failed regions")
 
-    # 2) how big are the failed regions?
-    ax = axes[1]
+    # 4) do the sources fail on different kinds of regions? same groups as
+    # the source pie, same colors as the category pie
+    ax = axes["crosstab"]
+    source_counts = Counter()
+    pairs = Counter()
+    for row in rows:
+        source = failure_source(row)
+        if source not in sources:
+            source = "Other request errors"
+        source_counts[source] += 1
+        pairs[source, category(row)] += 1
+    y_labels = [f"{source}\n({source_counts[source]:,} regions)" for source in sources]
+    left = np.zeros(len(sources))
+    for cat, cat_color in zip(categories, series_colors):
+        shares = np.array(
+            [100 * pairs[source, cat] / source_counts[source] for source in sources]
+        )
+        bars = ax.barh(
+            y_labels[::-1],
+            shares[::-1],
+            left=left[::-1],
+            color=cat_color,
+            height=0.6,
+            edgecolor=surface,
+            linewidth=2,
+            label=cat,
+        )
+        # label only segments wide enough for the text
+        ax.bar_label(
+            bars,
+            labels=[f"{v:.0f}%" if v >= 6 else "" for v in shares[::-1]],
+            label_type="center",
+            color=ink,
+        )
+        left += shares
+    ax.set_xlim(0, 100)
+    ax.grid(axis="y", visible=False)
+    ax.grid(axis="x", color=grid, linewidth=0.8)
+    ax.legend(
+        loc="lower left",
+        bbox_to_anchor=(0, 1),
+        ncol=len(categories),
+        frameon=False,
+        borderaxespad=0.3,
+    )
+    ax.set_title(
+        "Category of failed regions per source\n\n",
+        loc="left",
+        fontsize=11,
+    )
+    ax.set_xlabel("Share of the source's failed regions (%)")
+
+    # 5) how big are the failed regions?
+    ax = axes["size"]
     cap = 100
     sizes = [min(min(row["width"], row["height"]), cap) for row in rows]
     ax.hist(sizes, bins=range(0, cap + 5, 5), color=color, rwidth=0.85)
@@ -371,43 +508,19 @@ def plot_stats(
     ax.set_xlabel(f"Shorter side in px (last bin: ≥ {cap} px)")
     ax.set_ylabel("Failed regions")
 
-    # 3) how are the failures spread over the images?
-    ax = axes[2]
+    # 6) how are the failures spread over the images?
+    ax = axes["per_image"]
     per_image = list(Counter(row["image"] for row in rows).values())
     ax.hist(per_image, bins=20, color=color, rwidth=0.85)
     ax.set_title("Failed regions per image", loc="left", fontsize=11)
     ax.set_xlabel("Failed regions in one image")
     ax.set_ylabel("Images")
 
-    # 4) did the VLM report the failure, or did the request fail?
-    ax = axes[3]
-    counts = Counter(failure_source(row) for row in rows)
-    labels = ["Reported by VLM"] + sorted(
-        (label for label in counts if label != "Reported by VLM"),
-        key=lambda label: int(label.split()[-1]),
-    )
-    values = [counts[label] for label in labels]
-    bars = ax.barh(labels[::-1], values[::-1], color=color, height=0.6)
-    ax.bar_label(
-        bars,
-        labels=[f"{v:,} ({100 * v / n:.0f}%)" for v in values[::-1]],
-        padding=4,
-        color=ink,
-    )
-    ax.set_xlim(0, max(values) * 1.35)
-    ax.grid(axis="y", visible=False)
-    ax.grid(axis="x", color=grid, linewidth=0.8)
-    ax.set_title(
-        "Failed regions by source\n(HTTP status code of failed requests)",
-        loc="left",
-        fontsize=11,
-    )
-    ax.set_xlabel("Failed regions")
-
     fig.suptitle(
         f"{n:,} failed regions in {n_images:,} images", x=0.01, ha="left", fontsize=13
     )
-    fig.tight_layout()
+    # leave room at the top for the suptitle
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
     fig.savefig(path, dpi=150, facecolor=surface)
     plt.close(fig)
     return True
