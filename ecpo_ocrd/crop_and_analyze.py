@@ -7,18 +7,22 @@ Usage:
 
 For each PAGE-XML file in <xml_folder>, the page image is downloaded from the
 ECPO IIIF server into <output_folder>/<image name>/, and every text region whose
-text starts with "[OCR failed" is saved there as <region id>.jpg. With
+text starts with "[OCR failed" is saved there as <region id>.jpg. This
+includes both the failures reported by the VLM and the failed requests
+("[OCR failed: request error <status code>]"). With
 --image-folder, the original images are read from that folder instead and
 nothing is downloaded. Crops that
 already exist are not cut again. The XML files are processed in parallel.
 
 Afterwards, <output_folder>/failed_regions.csv lists every failed region, with
-flags whether it is too small or almost white/black, and
+flags whether it is too small or almost white/black and the status code of
+failed requests, and
 <output_folder>/failed_regions_stats.png shows the statistics.
 """
 
 import csv
 import os
+import re
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -31,6 +35,8 @@ from PIL import Image, ImageDraw
 
 BASE_LINK = "https://ecpo.cats.uni-heidelberg.de/fcgi-bin/iipsrv.fcgi?IIIF=/ecpo/images/{}/full/full/0/default.jpg"
 FAILED_PREFIX = "[OCR failed"
+# written by vlm_ocr.py when the request to the VLM fails with an HTTP status
+REQUEST_ERROR_RE = re.compile(r"\[OCR failed: request error (\d+)\]")
 
 # grey levels (0-255) from which a pixel counts as white or black;
 # paper in the scans is ~235-255, printed ink only ~130-150
@@ -52,6 +58,8 @@ CSV_FIELDS = [
     "too_small",
     "almost_white",
     "almost_black",
+    # HTTP status code if the request failed, empty if the VLM reported the failure
+    "request_status",
     "ocr_text",
 ]
 
@@ -98,6 +106,12 @@ def white_black_ratio(crop: Image.Image, mask: Image.Image) -> tuple[float, floa
     if total == 0:
         return 1.0, 0.0
     return sum(hist[WHITE_LEVEL:]) / total, sum(hist[: BLACK_LEVEL + 1]) / total
+
+
+def request_status(text: str) -> str:
+    """Return the HTTP status code of a failed request, "" if the VLM reported the failure."""
+    match = REQUEST_ERROR_RE.match(text)
+    return match.group(1) if match else ""
 
 
 def image_url(image_filename: str) -> str:
@@ -230,6 +244,7 @@ def process_xml(
                     "too_small": min(mask.size) < min_size,
                     "almost_white": white >= white_threshold,
                     "almost_black": black >= black_threshold,
+                    "request_status": request_status(text),
                     "ocr_text": text,
                 }
             )
@@ -251,6 +266,13 @@ def category(row: dict) -> str:
     if row["almost_black"]:
         return "Almost black"
     return "Other (has content)"
+
+
+def failure_source(row: dict) -> str:
+    """Who reported the failure: the VLM itself, or the request with its status code."""
+    if row["request_status"]:
+        return f"Request error {row['request_status']}"
+    return "Reported by VLM"
 
 
 def plot_stats(
@@ -289,7 +311,7 @@ def plot_stats(
         }
     )
 
-    fig, axes = plt.subplots(1, 3, figsize=(16, 4.8), facecolor=surface)
+    fig, axes = plt.subplots(1, 4, figsize=(21, 4.8), facecolor=surface)
     for ax in axes:
         ax.set_facecolor(surface)
         ax.spines[["top", "right"]].set_visible(False)
@@ -347,6 +369,31 @@ def plot_stats(
     ax.set_title("Failed regions per image", loc="left", fontsize=11)
     ax.set_xlabel("Failed regions in one image")
     ax.set_ylabel("Images")
+
+    # 4) did the VLM report the failure, or did the request fail?
+    ax = axes[3]
+    counts = Counter(failure_source(row) for row in rows)
+    labels = ["Reported by VLM"] + sorted(
+        (label for label in counts if label != "Reported by VLM"),
+        key=lambda label: int(label.split()[-1]),
+    )
+    values = [counts[label] for label in labels]
+    bars = ax.barh(labels[::-1], values[::-1], color=color, height=0.6)
+    ax.bar_label(
+        bars,
+        labels=[f"{v:,} ({100 * v / n:.0f}%)" for v in values[::-1]],
+        padding=4,
+        color=ink,
+    )
+    ax.set_xlim(0, max(values) * 1.35)
+    ax.grid(axis="y", visible=False)
+    ax.grid(axis="x", color=grid, linewidth=0.8)
+    ax.set_title(
+        "Failed regions by source\n(HTTP status code of failed requests)",
+        loc="left",
+        fontsize=11,
+    )
+    ax.set_xlabel("Failed regions")
 
     fig.suptitle(
         f"{n:,} failed regions in {n_images:,} images", x=0.01, ha="left", fontsize=13
@@ -447,6 +494,8 @@ def cli(
         writer.writeheader()
         writer.writerows(rows)
     click.echo(f"Wrote {len(rows)} failed regions to {csv_path}")
+    for source, count in sorted(Counter(failure_source(row) for row in rows).items()):
+        click.echo(f"  {source}: {count}")
 
     if rows and plot_stats(
         rows, min_size, white_threshold, black_threshold, output_folder / PLOT_NAME
