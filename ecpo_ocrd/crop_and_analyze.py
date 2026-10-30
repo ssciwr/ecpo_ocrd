@@ -309,9 +309,13 @@ def plot_stats(
         "#e1e0d9",
         "#c3c2b7",
     )
+    # bar charts and histograms with one series
     color = "#2a78d6"
-    # categorical colors, assigned in this order (blue, orange, aqua, yellow, magenta, green)
-    series_colors = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]
+    # categorical colors for the pies and the stacked bars, assigned in this order
+    # (dark blue, orange, aqua, yellow, magenta, green); dark blue instead of the
+    # blue above, so that the pies don't look like they belong to the bar charts
+    series_colors = ["#184f95", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]
+    dark_colors = {"#184f95", "#008300"}  # need white text on top
     plt.rcParams.update(
         {
             "font.size": 10,
@@ -475,7 +479,7 @@ def plot_stats(
             bars,
             labels=[f"{v:.0f}%" if v >= 6 else "" for v in shares[::-1]],
             label_type="center",
-            color=ink,
+            color="white" if cat_color in dark_colors else ink,
         )
         left += shares
     ax.set_xlim(0, 100)
