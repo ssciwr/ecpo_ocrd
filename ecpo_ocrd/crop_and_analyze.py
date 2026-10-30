@@ -1,5 +1,11 @@
-"""Cut out the regions where VLM OCR failed, to inspect them.
+"""Cut out the regions where VLM OCR failed or was skipped, to inspect them.
 Code suggestioned by Claude and checked by human.
+
+Works for workspaces OCR'd with and without the min_edge parameter of
+ocrd-vlm-ocr. With min_edge, regions whose shorter edge is below min_edge are
+not sent to the VLM, their text is "[OCR skipped: one edge too small (...)]".
+They are analysed like the failed regions, as their own source; without
+min_edge there are simply no skipped regions.
 
 Usage:
     python ecpo_ocrd/crop_and_analyze.py <xml_folder> <output_folder>
@@ -16,6 +22,8 @@ ECPO IIIF server into <output_folder>/<image name>/,
 * every text region whose text starts with "[OCR failed" is saved there as <region id>.jpg.
 This includes both the failures reported by the VLM and the failed requests
 ("[OCR failed: request error <status code>]").
+* every text region whose text starts with "[OCR skipped" (min_edge) is saved there
+as well.
 * Regions whose text got stuck repeating a few characters (until another character is encountered
 or the maximum output length is reached) are cut out as well,
 if one unit repeats itself at least --min-repeat-times times in a row.
@@ -25,7 +33,8 @@ nothing is downloaded. Crops that already exist are not cut again.
 
 The XML files are processed in parallel.
 
-Afterwards, <output_folder>/failed_regions_<settings>.csv lists every failed region, with
+Afterwards, <output_folder>/failed_regions_<settings>.csv lists every failed
+or skipped region, with
 flags:
 * whether one of its edges is too small or
 * it is almost white/black and
@@ -55,6 +64,9 @@ from PIL import Image, ImageDraw
 
 BASE_LINK = "https://ecpo.cats.uni-heidelberg.de/fcgi-bin/iipsrv.fcgi?IIIF=/ecpo/images/{}/full/full/0/default.jpg"
 FAILED_PREFIX = "[OCR failed"
+# written by vlm_ocr.py for regions it did not send to the VLM (min_edge)
+SKIPPED_PREFIX = "[OCR skipped"
+SKIPPED_SOURCE = "Skipped: one edge too small"
 # written by vlm_ocr.py when the request to the VLM fails with an HTTP status
 REQUEST_ERROR_RE = re.compile(r"\[OCR failed: request error (\d+)\]")
 # a unit of up to 10 characters (including line breaks), repeated right after itself
@@ -200,13 +212,19 @@ def region_texts(page) -> list[tuple[str, str, str]]:
     return result
 
 
-def is_failed(text: str, min_repeat_times: int) -> bool:
-    """Whether the OCR of a region failed.
+def is_marker(text: str) -> bool:
+    """Whether the text is a marker written by vlm_ocr.py instead of OCR text."""
+    return text.startswith((FAILED_PREFIX, SKIPPED_PREFIX))
 
-    Besides "[OCR failed ..." this includes texts where the VLM got stuck
-    repeating the same few characters at least min_repeat_times times in a row.
+
+def is_failed(text: str, min_repeat_times: int) -> bool:
+    """Whether the OCR of a region failed or was skipped.
+
+    Besides "[OCR failed ..." and "[OCR skipped ..." this includes texts where
+    the VLM got stuck repeating the same few characters at least
+    min_repeat_times times in a row.
     """
-    return text.startswith(FAILED_PREFIX) or most_repeat(text)[1] >= min_repeat_times
+    return is_marker(text) or most_repeat(text)[1] >= min_repeat_times
 
 
 class PageImage:
@@ -261,8 +279,9 @@ def process_xml(
     image_folder: Path = None,
     show_unfailed_regions: bool = False,
 ) -> tuple[list[dict], list[dict]]:
-    """Return the rows of the failed regions and, if show_unfailed_regions is set,
-    the flags of the unfailed regions (regions with text that did not fail)."""
+    """Return the rows of the failed or skipped regions and, if
+    show_unfailed_regions is set, the flags of the unfailed regions (regions
+    with text that did not fail)."""
     root = ET.parse(xml_path).getroot()
     ns = root.tag.split("}")[0] + "}"
     page = root.find(f"{ns}Page")
@@ -301,7 +320,7 @@ def process_xml(
 
             white, black = white_black_ratio(crop, mask)
             unit, repeat_times = most_repeat(text)
-            if text.startswith(FAILED_PREFIX) or repeat_times < min_repeat_times:
+            if is_marker(text) or repeat_times < min_repeat_times:
                 # not a repetition so leave both empty
                 unit, repeat_times = "", ""
             rows.append(
@@ -348,8 +367,11 @@ def process_xml(
     finally:
         page_image.close()
 
+    n_skipped = sum(text.startswith(SKIPPED_PREFIX) for _, _, text in regions)
+    skipped = f" ({n_skipped} of them skipped)" if n_skipped else ""
     click.echo(
-        f"{xml_path.name}: {len(regions)} failed regions, {n_cropped} newly cropped -> {image_dir}"
+        f"{xml_path.name}: {len(regions)} failed regions{skipped}, "
+        f"{n_cropped} newly cropped -> {image_dir}"
     )
     return rows, unfailed_rows
 
@@ -366,12 +388,23 @@ def category(row: dict) -> str:
 
 
 def failure_source(row: dict) -> str:
-    """How the OCR failed: reported by the VLM, a failed request, or repetition."""
+    """How the OCR failed: reported by the VLM, a failed request, repetition, or
+    skipped because of min_edge."""
+    if row["ocr_text"].startswith(SKIPPED_PREFIX):
+        return SKIPPED_SOURCE
     if row["request_status"]:
         return f"Request error {row['request_status']}"
     if row["most_repeated_unit"]:
         return "Repetition"
     return "Reported by VLM"
+
+
+def regions_word(rows: list[dict]) -> str:
+    """Return "failed or skipped regions" if some regions were skipped
+    (min_edge), "failed regions" otherwise."""
+    if any(failure_source(row) == SKIPPED_SOURCE for row in rows):
+        return "failed or skipped regions"
+    return "failed regions"
 
 
 def plot_stats(
@@ -469,6 +502,9 @@ def plot_stats(
         ax.set_axisbelow(True)
 
     n = len(rows)
+    # "failed regions", or "failed or skipped regions" if min_edge skipped some
+    what = regions_word(rows)
+    What = what[0].upper() + what[1:]
     n_images = len({row["image"] for row in rows})
 
     def pie(ax, labels: list[str], values: list[int], title: str) -> None:
@@ -534,7 +570,7 @@ def plot_stats(
         axes["category"],
         categories,
         [counts[label] for label in categories],
-        f"Failed regions by category, one per region in this order\n"
+        f"{What} by category, one per region in this order\n"
         f"(shorter side < {min_size} px, ≥ {white_threshold:.0%} white "
         f"or ≥ {black_threshold:.0%} black pixels)",
     )
@@ -542,20 +578,23 @@ def plot_stats(
     # 2) did the VLM report the failure, did the request fail, or did the VLM
     # get stuck repeating itself?
     counts = Counter(failure_source(row) for row in rows)
-    fixed = ["Reported by VLM", "Repetition"]
+    fixed = ["Reported by VLM", "Repetition", SKIPPED_SOURCE]
     request_errors = sorted(
         (label for label in counts if label not in fixed),
         key=lambda label: (-counts[label], int(label.split()[-1])),
     )
-    # one slice per status code, most frequent first
-    labels = fixed + request_errors
+    # one slice per status code, most frequent first; leave out fixed sources
+    # without regions, e.g. "Skipped" if min_edge was not used (and avoid
+    # dividing by 0 in the cross-tab)
+    labels = [label for label in fixed if counts[label]] + request_errors
     values = [counts[label] for label in labels]
     pie(
         axes["source"],
         labels,
         values,
-        "Failed regions by source\n(VLM's own failure message, repeated "
-        "characters, HTTP status code of failed requests)",
+        f"{What} by source\n(VLM's own failure message, repeated characters, "
+        + ("skipped by min_edge, " if SKIPPED_SOURCE in labels else "")
+        + "HTTP status code of failed requests)",
     )
     sources = labels
 
@@ -587,7 +626,7 @@ def plot_stats(
         ax.set_xlabel(what)
 
     # 3) each flag on its own, a region can have several of them
-    flag_bars(axes["flags"], rows, "Failed regions")
+    flag_bars(axes["flags"], rows, What)
 
     # 4) do the sources fail on different kinds of regions? same groups as
     # the source pie, same colors as the category pie
@@ -633,11 +672,11 @@ def plot_stats(
         borderaxespad=0.3,
     )
     ax.set_title(
-        "Category of failed regions per source\n\n",
+        f"Category of {what} per source\n\n",
         loc="left",
         fontsize=11,
     )
-    ax.set_xlabel("Share of the source's failed regions (%)")
+    ax.set_xlabel(f"Share of the source's {what} (%)")
 
     # 5) how big are the failed regions?
     ax = axes["size"]
@@ -653,19 +692,19 @@ def plot_stats(
         textcoords="offset points",
         color=ink,
     )
-    ax.set_title("Shorter side of failed regions", loc="left", fontsize=11)
+    ax.set_title(f"Shorter side of {what}", loc="left", fontsize=11)
     ax.set_xlabel(f"Shorter side in px (last bin: ≥ {cap} px)")
-    ax.set_ylabel("Failed regions")
+    ax.set_ylabel(What)
 
     # 6) how are the failures spread over the images?
     ax = axes["per_image"]
     per_image = list(Counter(row["image"] for row in rows).values())
     ax.hist(per_image, bins=20, color=color, rwidth=0.85)
-    ax.set_title("Failed regions per image", loc="left", fontsize=11)
-    ax.set_xlabel("Failed regions in one image")
+    ax.set_title(f"{What} per image", loc="left", fontsize=11)
+    ax.set_xlabel(f"{What} in one image")
     ax.set_ylabel("Images")
 
-    title = f"{n:,} failed regions in {n_images:,} images"
+    title = f"{n:,} {what} in {n_images:,} images"
 
     # 7) and 8) would a filter on the flags skip unfailed regions?
     if unfailed_rows:
@@ -813,7 +852,7 @@ def cli(
         writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
         writer.writeheader()
         writer.writerows(rows)
-    click.echo(f"Wrote {len(rows)} failed regions to {csv_path}")
+    click.echo(f"Wrote {len(rows)} {regions_word(rows)} to {csv_path}")
     for source, count in sorted(Counter(failure_source(row) for row in rows).items()):
         click.echo(f"  {source}: {count}")
 

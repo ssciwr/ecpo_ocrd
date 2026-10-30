@@ -61,6 +61,7 @@ class VLMOCRProcessor(Processor):
             base_url=self.parameter["server"],
         )
         self.model = self.parameter["model"]
+        self.min_edge = self.parameter["min_edge"]
         self.request_semaphore = BoundedSemaphore(REQUEST_SEMAPHORE_LIMIT)
         self.logger.info(
             "initialized VLM OCR client for model %s at %s with %d shared request slots",
@@ -143,6 +144,21 @@ class VLMOCRProcessor(Processor):
         return region_texts
 
     async def _ocr_region_image(self, region_id: str, region_image: Image.Image) -> str:
+        # The VLM cannot read crops with a very short edge (vLLM even rejects them
+        # with status 400), so don't send them. The marker keeps them countable
+        # for the analysis of failed regions.
+        if min(region_image.size) < self.min_edge:
+            self.logger.info(
+                "text region %s (%dx%d): shorter edge below min_edge %d, skipping OCR",
+                region_id,
+                region_image.width,
+                region_image.height,
+                self.min_edge,
+            )
+            return (
+                f"[OCR skipped: one edge too small "
+                f"({region_image.width}x{region_image.height} px)]"
+            )
         self.logger.debug(
             "text region %s: encoding crop for VLM request (%dx%d)",
             region_id,

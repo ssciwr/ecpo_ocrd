@@ -74,6 +74,13 @@
           "type": "string",
           "description": "API key for the inference server",
           "default": "no-api-key-required"
+        },
+        "min_edge": {
+          "type": "number",
+          "format": "integer",
+          "minimum": 0,
+          "description": "Text regions whose shorter edge is below this many pixels are not sent to the inference server, their text becomes '[OCR skipped: one edge too small (<width>x<height> px)]'. 0 sends all regions",
+          "default": 0
         }
       },
       "steps": [
