@@ -124,8 +124,15 @@ def polygon_mask(points: list[tuple[int, int]]) -> tuple[tuple, Image.Image]:
     """Return the bounding box of the polygon and its mask in bounding box coordinates."""
     xs = [x for x, _ in points]
     ys = [y for _, y in points]
-    # +1 so that the right/bottom border of the polygon is included
-    box = (min(xs), min(ys), max(xs) + 1, max(ys) + 1)
+    # like OCR-D's bbox_from_polygon + crop in vlm_ocr.py (right/bottom border
+    # excluded), so that sizes match the crops sent to the VLM and its min_edge;
+    # at least 1 px, so that degenerate polygons don't give empty crops
+    box = (
+        min(xs),
+        min(ys),
+        max(max(xs), min(xs) + 1),
+        max(max(ys), min(ys) + 1),
+    )
     mask = Image.new("L", (box[2] - box[0], box[3] - box[1]), 0)
     shifted = [(x - box[0], y - box[1]) for x, y in points]
     ImageDraw.Draw(mask).polygon(shifted, fill=255, outline=255)
