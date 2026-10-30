@@ -62,6 +62,7 @@ class VLMOCRProcessor(Processor):
         )
         self.model = self.parameter["model"]
         self.min_edge = self.parameter["min_edge"]
+        self.repetition_penalty = self.parameter["repetition_penalty"]
         self.request_semaphore = BoundedSemaphore(REQUEST_SEMAPHORE_LIMIT)
         self.logger.info(
             "initialized VLM OCR client for model %s at %s with %d shared request slots",
@@ -226,7 +227,7 @@ class VLMOCRProcessor(Processor):
                 max_tokens=1024,
                 temperature=0.0,
                 extra_body={
-                    "repetition_penalty": 1.0,
+                    "repetition_penalty": self.repetition_penalty,
                     "top_k": 0,
                     "top_p": 1.0,
                 },
