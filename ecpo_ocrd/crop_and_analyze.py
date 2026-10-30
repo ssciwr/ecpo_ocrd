@@ -15,8 +15,8 @@ nothing is downloaded. Crops that
 already exist are not cut again. The XML files are processed in parallel.
 
 Afterwards, <output_folder>/failed_regions_<settings>.csv lists every failed region, with
-flags whether it is too small or almost white/black and the status code of
-failed requests, and
+flags whether one of its edges is too small or it is almost white/black and
+the status code of failed requests, and
 <output_folder>/failed_regions_stats_<settings>.png shows the statistics.
 <settings> holds the options the flags depend on, e.g. "minsize10_white095_black095",
 so that runs with different options don't overwrite each other.
@@ -57,7 +57,7 @@ CSV_FIELDS = [
     "height",
     "white_ratio",
     "black_ratio",
-    "too_small",
+    "edge_too_small",
     "almost_white",
     "almost_black",
     # HTTP status code if the request failed, empty if the VLM reported the failure
@@ -250,7 +250,7 @@ def process_xml(
                     "height": mask.height,
                     "white_ratio": round(white, 3),
                     "black_ratio": round(black, 3),
-                    "too_small": min(mask.size) < min_size,
+                    "edge_too_small": min(mask.size) < min_size,
                     "almost_white": white >= white_threshold,
                     "almost_black": black >= black_threshold,
                     "request_status": request_status(text),
@@ -268,8 +268,8 @@ def process_xml(
 
 def category(row: dict) -> str:
     """One category per region, for the plot; the CSV keeps the individual flags."""
-    if row["too_small"]:
-        return "Too small"
+    if row["edge_too_small"]:
+        return "One edge too small"
     if row["almost_white"]:
         return "Almost white"
     if row["almost_black"]:
@@ -380,7 +380,12 @@ def plot_stats(
         ax.set_aspect("equal")
 
     # 1) why did the regions fail? one category per region
-    categories = ["Too small", "Almost white", "Almost black", "Other (has content)"]
+    categories = [
+        "One edge too small",
+        "Almost white",
+        "Almost black",
+        "Other (has content)",
+    ]
     counts = Counter(category(row) for row in rows)
     pie(
         axes["category"],
@@ -414,7 +419,7 @@ def plot_stats(
     # 3) each flag on its own, a region can have several of them
     ax = axes["flags"]
     flags = [
-        ("Too small", "too_small"),
+        ("One edge too small", "edge_too_small"),
         ("Almost white", "almost_white"),
         ("Almost black", "almost_black"),
     ]
@@ -521,7 +526,8 @@ def plot_stats(
     )
     # leave room at the top for the suptitle
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    fig.savefig(path, dpi=150, facecolor=surface)
+    # "tight" so that the legends next to the pies are not cut off
+    fig.savefig(path, dpi=150, facecolor=surface, bbox_inches="tight")
     plt.close(fig)
     return True
 
@@ -535,7 +541,8 @@ def plot_stats(
     "--min-size",
     default=10,
     show_default=True,
-    help="A region is too small if its shorter side is below this many pixels",
+    help="A region has one edge too small if its shorter side is below this many "
+    "pixels, even if its area is large",
 )
 @click.option(
     "--white-threshold",
