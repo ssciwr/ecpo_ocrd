@@ -381,6 +381,7 @@ def plot_stats(
     black_threshold: float,
     path: Path,
     unfailed_rows: list[dict] = None,
+    total_number_images: int = 0,
 ) -> bool:
     """Plot the statistics, return False if matplotlib is not installed.
 
@@ -664,8 +665,9 @@ def plot_stats(
     ax.set_xlabel("Failed regions in one image")
     ax.set_ylabel("Images")
 
-    # 7) and 8) would a filter on the flags skip unfailed regions?
     title = f"{n:,} failed regions in {n_images:,} images"
+
+    # 7) and 8) would a filter on the flags skip unfailed regions?
     if unfailed_rows:
         counts = Counter(category(row) for row in unfailed_rows)
         pie(
@@ -676,7 +678,7 @@ def plot_stats(
             "(would be skipped by a filter on these flags)",
         )
         flag_bars(axes["unfailed_flags"], unfailed_rows, "Unfailed regions")
-        title += f", {len(unfailed_rows):,} unfailed regions"
+        title += f", {len(unfailed_rows):,} unfailed regions, total {total_number_images:,} images"
 
     fig.suptitle(title, x=0.01, ha="left", fontsize=13)
     # extra room between the rows (in inches), so that the two-line titles
@@ -793,10 +795,14 @@ def cli(
 
     # keep the CSV in file order, independent of which job finished first
     rows = [
-        row for xml_path in xml_files for row in rows_per_file.get(xml_path, ([], []))[0]
+        row
+        for xml_path in xml_files
+        for row in rows_per_file.get(xml_path, ([], []))[0]
     ]
     unfailed_rows = [
-        row for xml_path in xml_files for row in rows_per_file.get(xml_path, ([], []))[1]
+        row
+        for xml_path in xml_files
+        for row in rows_per_file.get(xml_path, ([], []))[1]
     ]
 
     suffix = settings_suffix(
@@ -823,6 +829,7 @@ def cli(
         black_threshold,
         plot_path,
         unfailed_rows,
+        len(xml_files),
     ):
         click.echo(f"Saved statistics plot to {plot_path}")
 
