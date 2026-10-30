@@ -14,10 +14,12 @@ includes both the failures reported by the VLM and the failed requests
 nothing is downloaded. Crops that
 already exist are not cut again. The XML files are processed in parallel.
 
-Afterwards, <output_folder>/failed_regions.csv lists every failed region, with
+Afterwards, <output_folder>/failed_regions_<settings>.csv lists every failed region, with
 flags whether it is too small or almost white/black and the status code of
 failed requests, and
-<output_folder>/failed_regions_stats.png shows the statistics.
+<output_folder>/failed_regions_stats_<settings>.png shows the statistics.
+<settings> holds the options the flags depend on, e.g. "minsize10_white095_black095",
+so that runs with different options don't overwrite each other.
 """
 
 import csv
@@ -43,8 +45,8 @@ REQUEST_ERROR_RE = re.compile(r"\[OCR failed: request error (\d+)\]")
 WHITE_LEVEL = 200
 BLACK_LEVEL = 100
 
-CSV_NAME = "failed_regions.csv"
-PLOT_NAME = "failed_regions_stats.png"
+CSV_NAME = "failed_regions_{}.csv"
+PLOT_NAME = "failed_regions_stats_{}.png"
 CSV_FIELDS = [
     "image",
     "xml_file",
@@ -62,6 +64,13 @@ CSV_FIELDS = [
     "request_status",
     "ocr_text",
 ]
+
+
+def settings_suffix(min_size: int, white_threshold: float, black_threshold: float) -> str:
+    """Options in a form usable in file names, e.g. "minsize10_white095_black095"."""
+    white = f"{white_threshold:.2f}".replace(".", "")
+    black = f"{black_threshold:.2f}".replace(".", "")
+    return f"minsize{min_size}_white{white}_black{black}"
 
 
 def parse_points(points: str) -> list[tuple[int, int]]:
@@ -488,7 +497,8 @@ def cli(
     # keep the CSV in file order, independent of which job finished first
     rows = [row for xml_path in xml_files for row in rows_per_file.get(xml_path, [])]
 
-    csv_path = output_folder / CSV_NAME
+    suffix = settings_suffix(min_size, white_threshold, black_threshold)
+    csv_path = output_folder / CSV_NAME.format(suffix)
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
         writer.writeheader()
@@ -497,10 +507,9 @@ def cli(
     for source, count in sorted(Counter(failure_source(row) for row in rows).items()):
         click.echo(f"  {source}: {count}")
 
-    if rows and plot_stats(
-        rows, min_size, white_threshold, black_threshold, output_folder / PLOT_NAME
-    ):
-        click.echo(f"Saved statistics plot to {output_folder / PLOT_NAME}")
+    plot_path = output_folder / PLOT_NAME.format(suffix)
+    if rows and plot_stats(rows, min_size, white_threshold, black_threshold, plot_path):
+        click.echo(f"Saved statistics plot to {plot_path}")
 
 
 if __name__ == "__main__":
