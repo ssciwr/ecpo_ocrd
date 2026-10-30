@@ -446,12 +446,19 @@ def plot_stats(
         # last line: the unfailed regions
         layout.append(["unfailed_category"] * 3 + ["unfailed_flags"] * 3)
         height_ratios.append(1)
-    fig, axes = plt.subplot_mosaic(
-        layout,
-        height_ratios=height_ratios,
-        figsize=(18, 5 * sum(height_ratios)),
-        facecolor=surface,
+    # "constrained" makes room for titles, legends and the suptitle. Each line
+    # is its own subfigure, because the lines split their width differently:
+    # in one shared grid, e.g. the legend right of the first pie and the y labels
+    # left of the cross-tab below it would need the same column edge
+    fig = plt.figure(
+        figsize=(18, 5 * sum(height_ratios)), layout="constrained", facecolor=surface
     )
+    axes = {}
+    for subfig, line in zip(
+        fig.subfigures(len(layout), 1, height_ratios=height_ratios), layout
+    ):
+        subfig.set_facecolor(surface)
+        axes.update(subfig.subplot_mosaic([line]))
     for name, ax in axes.items():
         ax.set_facecolor(surface)
         if name in ("category", "source", "unfailed_category"):
@@ -672,9 +679,9 @@ def plot_stats(
         title += f", {len(unfailed_rows):,} unfailed regions"
 
     fig.suptitle(title, x=0.01, ha="left", fontsize=13)
-    # leave room at the top for the suptitle; h_pad: room between the rows, so
-    # that the two-line titles don't run into the axis labels above them
-    fig.tight_layout(rect=(0, 0, 1, 0.97), h_pad=4)
+    # extra room between the rows (in inches), so that the two-line titles
+    # don't come too close to the axis labels above them
+    fig.get_layout_engine().set(h_pad=0.3)
     # "tight" so that the legends next to the pies are not cut off
     fig.savefig(path, dpi=150, facecolor=surface, bbox_inches="tight")
     plt.close(fig)
