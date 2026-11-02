@@ -87,7 +87,13 @@ class VLMOCRProcessor(Processor):
             self.logger.info("page %s has no text regions", page_id)
             return result
 
-        page_image, page_coords, _ = self.workspace.image_from_page(page, page_id)
+        # Read the original image instead of an AlternativeImage: the segmentation
+        # steps store layout visualizations as AlternativeImage, and OCR-D would
+        # use the most recent one, so the VLM would get crops with the region
+        # outlines drawn over the text.
+        page_image, page_coords, _ = self.workspace.image_from_page(
+            page, page_id, feature_filter=self._alternative_image_features(page)
+        )
         self.logger.debug(
             "page %s image prepared: size=%dx%d features=%s",
             page_id,
@@ -112,6 +118,28 @@ class VLMOCRProcessor(Processor):
             "page %s: finished OCR for %d text blocks", page_id, len(region_texts)
         )
         return result
+
+    @staticmethod
+    def _alternative_image_features(page) -> str:
+        """Features (@comments) of all AlternativeImages of the page, to filter out.
+
+        Features that OCR-D can apply to the original image itself (cropped,
+        deskewed, rotated-*) are left out, otherwise OCR-D would skip them for
+        the original image as well.
+        """
+        auto_features = {
+            "cropped",
+            "deskewed",
+            "rotated-90",
+            "rotated-180",
+            "rotated-270",
+        }
+        features = set()
+        for alternative_image in page.get_AlternativeImage():
+            features.update((alternative_image.get_comments() or "").split(","))
+        features -= auto_features
+        features.discard("")
+        return ",".join(sorted(features))
 
     def _extract_text_region_images(
         self, text_regions, page_image: Image.Image, page_coords: dict
