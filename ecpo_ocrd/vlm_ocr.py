@@ -13,40 +13,39 @@ from ocrd_models.ocrd_page import TextEquivType
 import click
 from PIL import Image
 
-
 OCR_PROMPT_TEMPLATE = """
-Your task is to OCR this image written in traditional chinese.
-The reading order is {reading_order}.
+OCR this image. This image is a crop of a text region from a historical Chinese newspaper, 
+so it normally contains text. The text is mostly traditional Chinese; its reading order is {reading_order}.
 
 Your result needs to fulfill **all** of these constraints:
-* Give the result **exactly** as it appears on the image
-* Keep line breaks from the original
-* Do not modify to modern chinese, keep exactly as is.
-* Denote numbers exactly like in the image, not in english writing.
-* The result needs to follow the {reading_order} reading order.
-* If the text does not start in the top-right corner, start it in the right-most column.
-* Only output the transcribed text, without any comments or explanations.
-* If the image contains no legible text (e.g. too blurry, blank or only images),
-  do not guess and do not answer in Chinese. Instead, reply with exactly one line
-  in English: "[OCR failed: <short reason in English>]"
+* Transcribe exactly what is printed. Keep traditional and variant characters; 
+do not convert to simplified or modern forms, and do not correct errors.
+* Keep numbers as printed: Chinese numerals stay Chinese numerals, Arabic digits stay digits.
+* Keep punctuation as printed; do not add any.
+* Output one line per printed column (vertical text) or row (horizontal text), in the given reading order. 
+For vertical right-to-left text, begin with the right-most column, even if it does not start at the top.
+* Transcribe text in other languages (e.g. English, Japanese kana) as printed, without translating.
+* Output only the transcription, with no comments or explanations.
+* Only if no character is legible (e.g. the crop is blank or too blurry), output exactly one line: [OCR failed: <short reason in English>]
 
 Double-check your response so that it fulfills all constraints.
 """
 
-
 READING_ORDER_PROMPT = """
-You are an expert in classical Chinese paleography and historic East Asian page layouts.
-Analyze the image and determine the correct reading order of the text.
+You are an expert in historic Chinese newspaper layouts.
+Determine the reading order of the text in this image.
 
-Tasks:
-* Identify the text line orientation: "vertical" or "horizontal"
-* Identify column reading direction: "right-to-left" or "left-to-right" or "top-to-bottom"
+Answer with exactly one of these lines:
+vertical, right-to-left
+horizontal, right-to-left
+horizontal, left-to-right
 
-Output format (no explanations, no reasoning):
+* vertical: the characters run top to bottom in columns, the columns are read from right to left.
+* horizontal: the characters run in one or more rows, e.g. headlines. 
+Use right-to-left unless the row clearly reads left to right (e.g. Latin letters or Arabic numbers).
+* If the image shows only one character, answer: horizontal, right-to-left
 
-<orientation>,  <direction>
-
-Only produce the structured fields. No commentary or explanation.
+Output only the answer line, without any explanation.
 """
 
 REQUEST_SEMAPHORE_LIMIT = 100
@@ -224,7 +223,9 @@ class VLMOCRProcessor(Processor):
         except openai.APIError as e:
             # e.g. the server is not reachable: stop instead of marking every
             # region as failed, with an exception that the page workers can pass on
-            raise RuntimeError(f"VLM request for region {region_id} failed: {e}") from None
+            raise RuntimeError(
+                f"VLM request for region {region_id} failed: {e}"
+            ) from None
         self.logger.debug(
             "text region %s: OCR returned %d characters", region_id, len(text)
         )
