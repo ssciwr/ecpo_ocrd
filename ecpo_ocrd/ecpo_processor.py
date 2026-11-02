@@ -8,7 +8,6 @@ import os
 from ocrd import Processor, OcrdPage, OcrdPageResult, OcrdPageResultImage
 from ocrd.decorators import ocrd_cli_options, ocrd_cli_wrap_processor
 from ocrd_models.ocrd_page import (
-    AlternativeImageType,
     TextRegionType,
     ImageRegionType,
     LineDrawingRegionType,
@@ -151,14 +150,9 @@ class ECPOInferenceProcessor(Processor):
                 debug_img = overlay_outline(
                     Image.fromarray(img_arr), {label: selected_polygons}
                 )
-                debug_alt_img = AlternativeImageType(
-                    comments=f"Debug image with extracted {label} regions overlayed",
-                )
-                page.add_AlternativeImage(debug_alt_img)
+                # not an AlternativeImage, see the refined image below
                 result.images.append(
-                    OcrdPageResultImage(
-                        debug_img, f"debug_extracted_{label}", debug_alt_img
-                    )
+                    OcrdPageResultImage(debug_img, f"debug_extracted_{label}", None)
                 )
 
             refined_polys = self._refine_regions(img_arr, sub_selected_regions)
@@ -190,15 +184,14 @@ class ECPOInferenceProcessor(Processor):
 
                         refined_idx += 1
 
-        # display refined regions overlayed on the original image
-        overlayed_img = overlay_outline(Image.fromarray(img_arr), overlayed_polys)
-
-        # record alternative image with overlayed text regions
-        alt_img = AlternativeImageType(
-            comments="Refine Eynollah layout detection with PaddleOCR",
-        )
-        page.add_AlternativeImage(alt_img)
-        result.images.append(OcrdPageResultImage(overlayed_img, "refined", alt_img))
+        # Save the refined regions overlayed on the original image as a file of
+        # the output file group, but not as AlternativeImage: later processors
+        # (e.g. the OCR) would use the most recent AlternativeImage instead of the
+        # original image, i.e. get crops with the region outlines drawn over the
+        # text. alternative_image=None makes OCR-D add it to the METS only.
+        if self.parameter["save_images"]:
+            overlayed_img = overlay_outline(Image.fromarray(img_arr), overlayed_polys)
+            result.images.append(OcrdPageResultImage(overlayed_img, "refined", None))
 
         # draw saved polygons for debugging
         if self.logger.isEnabledFor(logging.DEBUG):
@@ -226,15 +219,10 @@ class ECPOInferenceProcessor(Processor):
                 debug_after_re_img = overlay_outline(
                     Image.fromarray(img_arr), {label: after_re_polys}
                 )
-                debug_after_re_alt_img = AlternativeImageType(
-                    comments=f"Debug image with refined {label} regions overlayed",
-                )
-                page.add_AlternativeImage(debug_after_re_alt_img)
+                # not an AlternativeImage, see the refined image above
                 result.images.append(
                     OcrdPageResultImage(
-                        debug_after_re_img,
-                        f"debug_refined_{label}",
-                        debug_after_re_alt_img,
+                        debug_after_re_img, f"debug_refined_{label}", None
                     )
                 )
 

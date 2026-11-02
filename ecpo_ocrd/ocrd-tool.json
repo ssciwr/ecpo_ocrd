@@ -45,6 +45,11 @@
           "default": ["text"],
           "description": "Which region labels to refine. Possible values include 'text', 'heading', 'image', 'artificial_boundary', and 'separator'. Use 'all' to select all labels.",
           "type": "array"
+        },
+        "save_images": {
+          "default": true,
+          "description": "Save the refined regions overlayed on the original image as files of the output file group (FILEID suffix _refined). They are not referenced as AlternativeImage in the PAGE-XML, so later processors still use the original image",
+          "type": "boolean"
         }
       },
       "steps": [

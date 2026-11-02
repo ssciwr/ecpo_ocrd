@@ -84,7 +84,7 @@ A quick-and-dirty solution to run the whole pipeline with GPU is to create two `
 
 ### Eynollah conda environment
 
-1. Use [this instruction](https://github.com/ssciwr/ecpo-eynollah/blob/main/eynollah_training.md#step-by-step-installation) to setup a `conda` environment, named e.g. `ecpo_eynollah`, with the specified Python, CUDA, cuDNN, and TensorFlow versions.
+1. Use [this instruction](https://github.com/ssciwr/ecpo-eynollah/blob/main/eynollah_training.md#step-by-step-installation) (except the last step of installing `eynollah` package) to setup a `conda` environment, named e.g. `ecpo_eynollah`, with the specified Python, CUDA, cuDNN, and TensorFlow versions.
 
 2. Install the Eynollah-related dependencies in this environment with:
 
