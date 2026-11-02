@@ -91,7 +91,6 @@ do not convert to simplified or modern forms, and do not correct errors.
 * Output one line per printed column (vertical text) or row (horizontal text), in the given reading order. 
 For vertical right-to-left text, begin with the right-most column, even if it does not start at the top.
 * Transcribe text in other languages (e.g. English, Japanese kana) as printed, without translating.
-* Write □ for each character that is unreadable or cut off at the edge.
 * Output only the transcription, with no comments or explanations.
 * Only if no character is legible (e.g. the crop is blank or too blurry), output exactly one line: [OCR failed: <short reason in English>]
 
