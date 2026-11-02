@@ -13,6 +13,8 @@ from ocrd_models.ocrd_page import TextEquivType
 import click
 from PIL import Image
 
+from ecpo_ocrd.repetition import is_repetition, repetition_penalties
+
 OCR_PROMPT_TEMPLATE = """
 OCR this image. This image is a crop of a text region from a historical Chinese newspaper, 
 so it normally contains text. The text is mostly traditional Chinese; its reading order is {reading_order}.
@@ -61,13 +63,19 @@ class VLMOCRProcessor(Processor):
         )
         self.model = self.parameter["model"]
         self.min_edge = self.parameter["min_edge"]
-        self.repetition_penalty = self.parameter["repetition_penalty"]
+        # every request starts without repetition penalty; answers that got
+        # stuck repeating themselves are sent again with a higher penalty
+        self.repetition_penalties = repetition_penalties(
+            self.parameter["max_repetition_penalty"]
+        )
         self.request_semaphore = BoundedSemaphore(REQUEST_SEMAPHORE_LIMIT)
         self.logger.info(
-            "initialized VLM OCR client for model %s at %s with %d shared request slots",
+            "initialized VLM OCR client for model %s at %s with %d shared request "
+            "slots, repetition penalties %s",
             self.model,
             self.parameter["server"],
             REQUEST_SEMAPHORE_LIMIT,
+            self.repetition_penalties,
         )
 
     def process_page_pcgts(
@@ -234,10 +242,57 @@ class VLMOCRProcessor(Processor):
     async def _vllm_request(
         self, prompt: str, image_data_url: str, request_kind: str, region_id: str
     ) -> str:
+        """Send the request without repetition penalty first. If the answer got
+        stuck repeating itself, send it again with the next higher penalty, up
+        to max_repetition_penalty, and return the last answer."""
+        for attempt, penalty in enumerate(self.repetition_penalties):
+            text, finish_reason = await self._vllm_request_once(
+                prompt, image_data_url, request_kind, region_id, penalty
+            )
+            if not is_repetition(text, finish_reason):
+                if attempt:
+                    self.logger.info(
+                        "text region %s: %s answer without repetition "
+                        "at repetition_penalty %g",
+                        region_id,
+                        request_kind,
+                        penalty,
+                    )
+                return text
+            self.logger.info(
+                "text region %s: %s answer repeats itself at repetition_penalty %g "
+                "(finish_reason %s, %d characters)",
+                region_id,
+                request_kind,
+                penalty,
+                finish_reason,
+                len(text),
+            )
+        self.logger.warning(
+            "text region %s: %s answer still repeats itself at the maximum "
+            "repetition_penalty %g",
+            region_id,
+            request_kind,
+            self.repetition_penalties[-1],
+        )
+        return text
+
+    async def _vllm_request_once(
+        self,
+        prompt: str,
+        image_data_url: str,
+        request_kind: str,
+        region_id: str,
+        repetition_penalty: float,
+    ) -> Tuple[str, Optional[str]]:
+        """Send one request, return the answer and its finish_reason."""
         await self._acquire_request_slot()
         try:
             self.logger.debug(
-                "text region %s: sending %s request to VLM", region_id, request_kind
+                "text region %s: sending %s request to VLM (repetition_penalty %g)",
+                region_id,
+                request_kind,
+                repetition_penalty,
             )
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -256,7 +311,7 @@ class VLMOCRProcessor(Processor):
                 max_tokens=1024,
                 temperature=0.0,
                 extra_body={
-                    "repetition_penalty": self.repetition_penalty,
+                    "repetition_penalty": repetition_penalty,
                     "top_k": 0,
                     "top_p": 1.0,
                 },
@@ -264,7 +319,8 @@ class VLMOCRProcessor(Processor):
             self.logger.debug(
                 "text region %s: completed %s request", region_id, request_kind
             )
-            return response.choices[0].message.content
+            choice = response.choices[0]
+            return choice.message.content or "", choice.finish_reason
         finally:
             self.request_semaphore.release()
 

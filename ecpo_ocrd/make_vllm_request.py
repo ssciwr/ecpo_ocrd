@@ -5,7 +5,10 @@ sent as a PNG data URL, with greedy sampling. Like the processor, it first asks
 for the reading order, then sends the OCR prompt with that reading order. With
 --reading-order the reading order step is skipped. Each request is saved as
 JSON next to the image and sent with curl, its response is saved next to
-it as <image>.<kind>.response.json. With --upscale the image is resized by
+it as <image>.<kind>.response.json. Like the processor, every request is sent
+without repetition penalty first; if the answer got stuck repeating itself, it
+is sent again with the penalty increased by 0.05, up to
+--max-repetition-penalty. The saved request and response are the last attempt. With --upscale the image is resized by
 that factor before it is sent, the resized image is saved as <image>.x<factor>.png
 and the file names of requests and responses get .x<factor> too, so they do not
 overwrite the results without upscaling.
@@ -15,7 +18,7 @@ Usage:
         [--server http://localhost:9080/v1]
         [--model Qwen/Qwen3-VL-32B-Instruct]
         [--reading-order "top to bottom, right-to-left"]
-        [--repetition-penalty 1.0]
+        [--max-repetition-penalty 1.2]
         [--upscale 1.0]
 """
 
@@ -27,6 +30,11 @@ from pathlib import Path
 
 import click
 from PIL import Image
+
+try:
+    from ecpo_ocrd.repetition import is_repetition, repetition_penalties
+except ImportError:  # run as a script without the package installed
+    from repetition import is_repetition, repetition_penalties
 
 
 def load_image(image_path: str, upscale: float = 1.0) -> Image.Image:
@@ -136,17 +144,31 @@ def send_request(
     image: Image.Image,
     output_stem: str,
     model: str,
-    repetition_penalty: float,
+    max_repetition_penalty: float,
 ) -> dict:
-    """Save the request as <output_stem>.<kind>.request.json, send it to the
-    server, save the response as <output_stem>.<kind>.response.json and
-    return it."""
-    request = make_request(prompt, image, model, repetition_penalty)
+    """Send the request without repetition penalty first and again with a
+    higher penalty while the answer repeats itself, as vlm_ocr.py does. Save
+    the last request as <output_stem>.<kind>.request.json and its response as
+    <output_stem>.<kind>.response.json, and return the response."""
     request_path = f"{output_stem}.{kind}.request.json"
-    with open(request_path, "w", encoding="utf-8") as f:
-        json.dump(request, f, ensure_ascii=False)
+    for penalty in repetition_penalties(max_repetition_penalty):
+        request = make_request(prompt, image, model, penalty)
+        with open(request_path, "w", encoding="utf-8") as f:
+            json.dump(request, f, ensure_ascii=False)
+        response = curl_json(f"{server}/chat/completions", request_path)
+        choice = response["choices"][0]
+        repeats = is_repetition(
+            choice["message"]["content"] or "", choice.get("finish_reason")
+        )
+        click.echo(
+            f"{kind} at repetition_penalty {penalty:g}: "
+            f"{'repeats itself' if repeats else 'no repetition'} "
+            f"(finish_reason {choice.get('finish_reason')})",
+            err=True,
+        )
+        if not repeats:
+            break
     click.echo(f"{kind} request saved to {request_path}", err=True)
-    response = curl_json(f"{server}/chat/completions", request_path)
     response_path = f"{output_stem}.{kind}.response.json"
     with open(response_path, "w", encoding="utf-8") as f:
         json.dump(response, f, ensure_ascii=False, indent=2)
@@ -175,7 +197,15 @@ def send_request(
     "'top to bottom, right-to-left'. Skips the reading order request. "
     "Default: ask the model for the reading order first",
 )
-@click.option("--repetition-penalty", default=1.0, show_default=True, type=float)
+@click.option(
+    "--max-repetition-penalty",
+    default=1.2,
+    show_default=True,
+    type=click.FloatRange(min=1.0),
+    help="Start without repetition penalty, retry answers that repeat "
+    "themselves with the penalty increased by 0.05 up to this value. "
+    "1.0 disables the retries",
+)
 @click.option(
     "--upscale",
     default=1.0,
@@ -189,7 +219,7 @@ def main(
     server: str,
     model: str,
     reading_order: str | None,
-    repetition_penalty: float,
+    max_repetition_penalty: float,
     upscale: float,
 ) -> None:
     """Send IMAGE_PATH with the reading order prompt, then with the OCR
@@ -213,7 +243,7 @@ def main(
             image,
             output_stem,
             model,
-            repetition_penalty,
+            max_repetition_penalty,
         )
         reading_order = response["choices"][0]["message"]["content"]
         click.echo(f"reading order (from the model): {reading_order}")
@@ -227,7 +257,7 @@ def main(
         image,
         output_stem,
         model,
-        repetition_penalty,
+        max_repetition_penalty,
     )
     click.echo(json.dumps(response, ensure_ascii=False, indent=2))
 

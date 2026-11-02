@@ -62,6 +62,11 @@ from pathlib import Path
 import click
 from PIL import Image, ImageDraw
 
+try:
+    from ecpo_ocrd.repetition import MIN_REPEAT_TIMES, most_repeat
+except ImportError:  # run as a script without the package installed
+    from repetition import MIN_REPEAT_TIMES, most_repeat
+
 BASE_LINK = "https://ecpo.cats.uni-heidelberg.de/fcgi-bin/iipsrv.fcgi?IIIF=/ecpo/images/{}/full/full/0/default.jpg"
 FAILED_PREFIX = "[OCR failed"
 # written by vlm_ocr.py for regions it did not send to the VLM (min_edge)
@@ -69,8 +74,6 @@ SKIPPED_PREFIX = "[OCR skipped"
 SKIPPED_SOURCE = "Skipped: one edge too small"
 # written by vlm_ocr.py when the request to the VLM fails with an HTTP status
 REQUEST_ERROR_RE = re.compile(r"\[OCR failed: request error (\d+)\]")
-# a unit of up to 10 characters (including line breaks), repeated right after itself
-REPEAT_RE = re.compile(r"(.{1,10}?)\1+", re.DOTALL)
 
 # grey levels (0-255) from which a pixel counts as white or black;
 # paper in the scans is ~235-255, printed ink only ~130-150
@@ -170,21 +173,6 @@ def request_status(text: str) -> str:
     """Return the HTTP status code of a failed request, "" if the VLM reported the failure."""
     match = REQUEST_ERROR_RE.match(text)
     return match.group(1) if match else ""
-
-
-def most_repeat(text: str) -> tuple[str, int]:
-    """Return the unit repeated most often in a row, and how many times it occurs.
-
-    The run ends where another unit appears or the text ends, e.g. "abc，，，，d"
-    gives ("，", 4) and "一元二角\\n一元二角\\n" gives ("一元二角\\n", 2). Text
-    without any unit directly repeated gives ("", 0).
-    """
-    unit, times = "", 0
-    for match in REPEAT_RE.finditer(text):
-        run_times = (match.end() - match.start()) // len(match.group(1))
-        if run_times > times:
-            unit, times = match.group(1), run_times
-    return unit, times
 
 
 def image_url(image_filename: str) -> str:
@@ -783,7 +771,7 @@ def plot_stats(
 @click.option(
     "--min-repeat-times",
     type=click.IntRange(min=2),
-    default=50,
+    default=MIN_REPEAT_TIMES,
     show_default=True,
     help="A text counts as repetition if a unit of up to 10 characters "
     "repeats itself at least this many times in a row, until another unit "

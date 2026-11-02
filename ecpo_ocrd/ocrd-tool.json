@@ -87,12 +87,12 @@
           "description": "Text regions whose shorter edge is below this many pixels are not sent to the inference server, their text becomes '[OCR skipped: one edge too small (<width>x<height> px)]'. 0 sends all regions",
           "default": 0
         },
-        "repetition_penalty": {
+        "max_repetition_penalty": {
           "type": "number",
           "format": "float",
           "minimum": 1.0,
-          "description": "Repetition penalty for the VLM's sampling, passed to the inference server (vLLM). 1.0 means no penalty, values above 1.0 make repeating the same tokens less likely, e.g. against loops of repeated characters. Keep it low (about 1.02-1.05): legitimately repeated characters and punctuation are penalized as well",
-          "default": 1.0
+          "description": "Maximum repetition penalty for the VLM's sampling, passed to the inference server (vLLM). Every request is sent without penalty (1.0) first. If the answer got stuck repeating itself (cut off at max_tokens, or a unit of up to 10 characters repeated at least 50 times in a row), it is sent again with the penalty increased by 0.05, up to this value. 1.0 disables the retries",
+          "default": 1.2
         }
       },
       "steps": [
