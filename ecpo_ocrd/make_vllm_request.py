@@ -1,5 +1,9 @@
 """Send one region image to the vLLM server, as ocrd-vlm-ocr does.
 
+Enable accessing to the remote server's application first:
+
+ssh -N -L 9080:localhost:9080 yourname@server -pPort
+
 Builds the same request bodies as ocrd-vlm-ocr (see vlm_ocr.py): the image is
 sent as a PNG data URL, with greedy sampling. Like the processor, it first asks
 for the reading order, then sends the OCR prompt with that reading order. With
