@@ -13,6 +13,7 @@ from ocrd_models.ocrd_page import TextEquivType
 import click
 from PIL import Image
 
+from ecpo_ocrd.reading_order import DEFAULT_READING_ORDER, parse_reading_order
 from ecpo_ocrd.repetition import is_repetition, repetition_penalties
 
 OCR_PROMPT_TEMPLATE = """
@@ -51,6 +52,31 @@ Output only the answer line, without any explanation.
 """
 
 REQUEST_SEMAPHORE_LIMIT = 100
+
+
+def region_comments(
+    ocr_penalty: float, ocr_repeats: bool, reading_order_default: bool = False
+) -> Optional[str]:
+    """TextEquiv/@comments for a region whose OCR request was sent again with a
+    higher repetition penalty or whose reading order answer was invalid, None
+    otherwise.
+
+    E.g. "repetition_penalty=1.1" if the OCR answer stopped repeating itself
+    at penalty 1.1, "repetition_penalty=1.2; still repeats" if it repeats
+    itself even at the maximum penalty, and "reading_order=default" if the
+    model did not answer with one of the allowed reading orders, so the OCR
+    prompt got DEFAULT_READING_ORDER. crop_and_analyze.py reads these comments.
+    """
+    comments = []
+    # retried: sent with a higher penalty than the first request, or still
+    # repeating (also if max_repetition_penalty is 1.0, i.e. no retries)
+    if ocr_penalty > 1.0 or ocr_repeats:
+        comments.append(f"repetition_penalty={ocr_penalty:g}")
+        if ocr_repeats:
+            comments.append("still repeats")
+    if reading_order_default:
+        comments.append("reading_order=default")
+    return "; ".join(comments) or None
 
 
 class VLMOCRProcessor(Processor):
@@ -118,8 +144,8 @@ class VLMOCRProcessor(Processor):
         )
         region_texts = asyncio.run(self._ocr_region_images(region_images))
 
-        for (region, _), text in zip(region_images, region_texts):
-            region.set_TextEquiv([TextEquivType(Unicode=text)])
+        for (region, _), (text, comments) in zip(region_images, region_texts):
+            region.set_TextEquiv([TextEquivType(Unicode=text, comments=comments)])
 
         self.logger.info(
             "page %s: finished OCR for %d text blocks", page_id, len(region_texts)
@@ -168,7 +194,7 @@ class VLMOCRProcessor(Processor):
 
     async def _ocr_region_images(
         self, region_images: Sequence[Tuple[object, Image.Image]]
-    ) -> List[str]:
+    ) -> List[Tuple[str, Optional[str]]]:
         tasks = [
             asyncio.create_task(
                 self._ocr_region_image(region.id or "<no-id>", region_image)
@@ -179,7 +205,11 @@ class VLMOCRProcessor(Processor):
         self.logger.debug("completed all VLM OCR tasks")
         return region_texts
 
-    async def _ocr_region_image(self, region_id: str, region_image: Image.Image) -> str:
+    async def _ocr_region_image(
+        self, region_id: str, region_image: Image.Image
+    ) -> Tuple[str, Optional[str]]:
+        """Return the text of the region and its TextEquiv/@comments (see
+        region_comments)."""
         # The VLM cannot read crops with a very short edge (vLLM even rejects them
         # with status 400), so don't send them. The marker keeps them countable
         # for the analysis of failed regions.
@@ -193,7 +223,8 @@ class VLMOCRProcessor(Processor):
             )
             return (
                 f"[OCR skipped: one edge too small "
-                f"({region_image.width}x{region_image.height} px)]"
+                f"({region_image.width}x{region_image.height} px)]",
+                None,
             )
         self.logger.debug(
             "text region %s: encoding crop for VLM request (%dx%d)",
@@ -206,13 +237,10 @@ class VLMOCRProcessor(Processor):
         # whole page, and openai's exceptions cannot even be passed back from the
         # parallel page workers, which hides the actual error message.
         try:
-            reading_order = await self._vllm_request(
-                READING_ORDER_PROMPT, image_data_url, "reading-order", region_id
+            reading_order, reading_order_default = await self._reading_order(
+                image_data_url, region_id
             )
-            self.logger.debug(
-                "text region %s: detected reading order %r", region_id, reading_order
-            )
-            text = await self._vllm_request(
+            text, ocr_penalty, ocr_repeats = await self._vllm_request(
                 OCR_PROMPT_TEMPLATE.format(reading_order=reading_order),
                 image_data_url,
                 "ocr",
@@ -227,7 +255,7 @@ class VLMOCRProcessor(Processor):
                 e.status_code,
                 e.message,
             )
-            return f"[OCR failed: request error {e.status_code}]"
+            return f"[OCR failed: request error {e.status_code}]", None
         except openai.APIError as e:
             # e.g. the server is not reachable: stop instead of marking every
             # region as failed, with an exception that the page workers can pass on
@@ -237,14 +265,40 @@ class VLMOCRProcessor(Processor):
         self.logger.debug(
             "text region %s: OCR returned %d characters", region_id, len(text)
         )
-        return text
+        return text, region_comments(ocr_penalty, ocr_repeats, reading_order_default)
+
+    async def _reading_order(
+        self, image_data_url: str, region_id: str
+    ) -> Tuple[str, bool]:
+        """Ask the VLM for the reading order, once and without repetition
+        penalty: the answer is one of a few fixed lines, so instead of retrying
+        answers that repeat themselves, any answer that is not one of them is
+        replaced by DEFAULT_READING_ORDER. Return the reading order and whether
+        it is the default."""
+        answer, _ = await self._vllm_request_once(
+            READING_ORDER_PROMPT, image_data_url, "reading-order", region_id, 1.0
+        )
+        reading_order = parse_reading_order(answer)
+        if reading_order is None:
+            self.logger.warning(
+                "text region %s: invalid reading order answer %r, using %r",
+                region_id,
+                answer[:100],
+                DEFAULT_READING_ORDER,
+            )
+            return DEFAULT_READING_ORDER, True
+        self.logger.debug(
+            "text region %s: detected reading order %r", region_id, reading_order
+        )
+        return reading_order, False
 
     async def _vllm_request(
         self, prompt: str, image_data_url: str, request_kind: str, region_id: str
-    ) -> str:
+    ) -> Tuple[str, float, bool]:
         """Send the request without repetition penalty first. If the answer got
         stuck repeating itself, send it again with the next higher penalty, up
-        to max_repetition_penalty, and return the last answer."""
+        to max_repetition_penalty. Return the last answer, the penalty it was
+        sent with and whether it still repeats itself."""
         for attempt, penalty in enumerate(self.repetition_penalties):
             text, finish_reason = await self._vllm_request_once(
                 prompt, image_data_url, request_kind, region_id, penalty
@@ -258,7 +312,7 @@ class VLMOCRProcessor(Processor):
                         request_kind,
                         penalty,
                     )
-                return text
+                return text, penalty, False
             self.logger.info(
                 "text region %s: %s answer repeats itself at repetition_penalty %g "
                 "(finish_reason %s, %d characters)",
@@ -275,7 +329,7 @@ class VLMOCRProcessor(Processor):
             request_kind,
             self.repetition_penalties[-1],
         )
-        return text
+        return text, self.repetition_penalties[-1], True
 
     async def _vllm_request_once(
         self,

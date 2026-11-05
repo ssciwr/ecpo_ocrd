@@ -103,6 +103,12 @@ CSV_FIELDS = [
     # repetition
     "most_repeated_unit",
     "repeat_times",
+    # TextEquiv/@comments written by vlm_ocr.py (see region_comments there):
+    # "repetition_penalty=1.1" or "repetition_penalty=1.2; still repeats" if
+    # the OCR request was sent again with a higher repetition penalty,
+    # "reading_order=default" if the reading order answer was invalid; empty
+    # otherwise (or if the workspace was OCR'd before vlm_ocr.py wrote them)
+    "ocr_comments",
     "ocr_text",
 ]
 
@@ -217,6 +223,18 @@ def region_texts(page) -> list[tuple[str, str, str]]:
     return result
 
 
+def region_ocr_comments(page) -> dict[str, str]:
+    """TextEquiv/@comments of the text regions by region id, for the regions
+    that have one (see region_comments in vlm_ocr.py)."""
+    ns = page.tag.split("}")[0] + "}"
+    result = {}
+    for region in page.iter(f"{ns}TextRegion"):
+        text_equiv = region.find(f"{ns}TextEquiv")
+        if text_equiv is not None and text_equiv.get("comments"):
+            result[region.get("id")] = text_equiv.get("comments")
+    return result
+
+
 def is_marker(text: str) -> bool:
     """Whether the text is a marker written by vlm_ocr.py instead of OCR text."""
     return text.startswith((FAILED_PREFIX, SKIPPED_PREFIX))
@@ -300,6 +318,7 @@ def process_xml(
 
     all_regions = region_texts(page)
     regions = [r for r in all_regions if is_failed(r[2], min_repeat_times)]
+    ocr_comments = region_ocr_comments(page)
     rows = []
     unfailed_rows = []
     n_cropped = 0
@@ -342,6 +361,7 @@ def process_xml(
                     # escape line breaks, so that the unit stays readable in the CSV
                     "most_repeated_unit": unit.replace("\n", "\\n"),
                     "repeat_times": repeat_times,
+                    "ocr_comments": ocr_comments.get(region_id, ""),
                     "ocr_text": text,
                 }
             )

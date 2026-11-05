@@ -9,10 +9,13 @@ sent as a PNG data URL, with greedy sampling. Like the processor, it first asks
 for the reading order, then sends the OCR prompt with that reading order. With
 --reading-order the reading order step is skipped. Each request is saved as
 JSON next to the image and sent with curl, its response is saved next to
-it as <image>.<kind>.response.json. Like the processor, every request is sent
-without repetition penalty first; if the answer got stuck repeating itself, it
-is sent again with the penalty increased by 0.05, up to
---max-repetition-penalty. The saved request and response are the last attempt. With --upscale the image is resized by
+it as <image>.<kind>.response.json. Like the processor, the reading order
+request is sent once without repetition penalty; if the answer is not one of
+the allowed reading orders, the default reading order is used instead. The OCR
+request is sent without repetition penalty first; if the answer got stuck
+repeating itself, it is sent again with the penalty increased by 0.05, up to
+--max-repetition-penalty. The saved request and response are the last attempt.
+With --upscale the image is resized by
 that factor before it is sent, the resized image is saved as <image>.x<factor>.png
 and the file names of requests and responses get .x<factor> too, so they do not
 overwrite the results without upscaling.
@@ -36,8 +39,10 @@ import click
 from PIL import Image
 
 try:
+    from ecpo_ocrd.reading_order import DEFAULT_READING_ORDER, parse_reading_order
     from ecpo_ocrd.repetition import is_repetition, repetition_penalties
 except ImportError:  # run as a script without the package installed
+    from reading_order import DEFAULT_READING_ORDER, parse_reading_order
     from repetition import is_repetition, repetition_penalties
 
 
@@ -206,8 +211,9 @@ def send_request(
     default=1.2,
     show_default=True,
     type=click.FloatRange(min=1.0),
-    help="Start without repetition penalty, retry answers that repeat "
-    "themselves with the penalty increased by 0.05 up to this value. "
+    help="Start the OCR request without repetition penalty, retry answers "
+    "that repeat themselves with the penalty increased by 0.05 up to this "
+    "value (the reading order request is never retried). "
     "1.0 disables the retries",
 )
 @click.option(
@@ -240,6 +246,7 @@ def main(
             err=True,
         )
     if reading_order is None:
+        # once and without repetition penalty, as vlm_ocr.py does
         response = send_request(
             server,
             "reading_order",
@@ -247,10 +254,18 @@ def main(
             image,
             output_stem,
             model,
-            max_repetition_penalty,
+            max_repetition_penalty=1.0,
         )
-        reading_order = response["choices"][0]["message"]["content"]
-        click.echo(f"reading order (from the model): {reading_order}")
+        answer = response["choices"][0]["message"]["content"]
+        reading_order = parse_reading_order(answer)
+        if reading_order is None:
+            reading_order = DEFAULT_READING_ORDER
+            click.echo(
+                f"reading order: invalid answer {answer[:100]!r}, "
+                f"using the default: {reading_order}"
+            )
+        else:
+            click.echo(f"reading order (from the model): {reading_order}")
     else:
         click.echo(f"reading order (given): {reading_order}")
 
