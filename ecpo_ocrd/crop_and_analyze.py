@@ -19,7 +19,9 @@ Usage:
 
 For each PAGE-XML file in <xml_folder>, the page image is downloaded from the
 ECPO IIIF server into <output_folder>/<image name>/,
-* every text region whose text starts with "[OCR failed" is saved there as <region id>.jpg.
+* every text region whose text starts with "[OCR failed" is saved there as <region id>.png,
+cut like OCR-D's image_from_segment cuts the crops that vlm_ocr.py sends to the
+VLM (same pixels, lossless).
 This includes both the failures reported by the VLM and the failed requests
 ("[OCR failed: request error <status code>]").
 * every text region whose text starts with "[OCR skipped" (min_edge) is saved there
@@ -53,7 +55,6 @@ import os
 import re
 import urllib.parse
 import urllib.request
-from io import BytesIO
 import xml.etree.ElementTree as ET
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -119,8 +120,11 @@ def settings_suffix(
 
 
 def parse_points(points: str) -> list[tuple[int, int]]:
-    """Parse PAGE-XML points "x1,y1 x2,y2 ..." into a list of (x, y) tuples."""
-    return [tuple(int(float(v)) for v in p.split(",")) for p in points.split()]
+    """Parse PAGE-XML points "x1,y1 x2,y2 ..." into a list of (x, y) tuples.
+
+    Rounded like OCR-D's coordinates_of_segment (used by image_from_segment), not truncated.
+    """
+    return [tuple(round(float(v)) for v in p.split(",")) for p in points.split()]
 
 
 def polygon_mask(points: list[tuple[int, int]]) -> tuple[tuple, Image.Image]:
@@ -136,10 +140,16 @@ def polygon_mask(points: list[tuple[int, int]]) -> tuple[tuple, Image.Image]:
         max(max(xs), min(xs) + 1),
         max(max(ys), min(ys) + 1),
     )
-    mask = Image.new("L", (box[2] - box[0], box[3] - box[1]), 0)
-    shifted = [(x - box[0], y - box[1]) for x, y in points]
-    ImageDraw.Draw(mask).polygon(shifted, fill=255, outline=255)
-    return box, mask
+    # Drawn like OCR-D's polygon_mask (used by image_from_segment), so that the
+    # crops have exactly the pixels that vlm_ocr.py sends to the VLM:
+    # * outline=0: the pixels on the polygon outline are outside the mask,
+    #   i.e. filled white
+    # * in page coordinates, then cut to the bounding box: PIL rasterizes
+    #   polygons shifted to the bounding box slightly differently (single
+    #   pixels along the edges)
+    mask = Image.new("L", (box[2], box[3]), 0)
+    ImageDraw.Draw(mask).polygon(points, fill=255, outline=0)
+    return box, mask.crop(box)
 
 
 def crop_polygon(
@@ -296,7 +306,7 @@ def process_xml(
     try:
         for region_id, points, text in regions:
             box, mask = polygon_mask(parse_points(points))
-            crop_path = image_dir / f"{region_id}.jpg"
+            crop_path = image_dir / f"{region_id}.png"
 
             crop = None
             if crop_path.exists():
@@ -306,11 +316,8 @@ def process_xml(
             if crop is None:
                 crop = crop_polygon(page_image.get(), parse_points(points))
                 part = crop_path.with_name(crop_path.name + ".part")
-                crop.save(part, format="JPEG")
+                crop.save(part, format="PNG")
                 os.replace(part, crop_path)
-                # use the saved (JPEG compressed) crop for the statistics, so that
-                # they don't depend on whether the crop existed already
-                crop = Image.open(crop_path)
                 n_cropped += 1
 
             white, black = white_black_ratio(crop, mask)
@@ -344,13 +351,10 @@ def process_xml(
                 if not text or is_failed(text, min_repeat_times):
                     continue
                 _, mask = polygon_mask(parse_points(points))
-                # no crops are saved, but compress them like the saved crops of
-                # the failed regions, so that both statistics are comparable
-                buffer = BytesIO()
-                crop_polygon(page_image.get(), parse_points(points)).save(
-                    buffer, format="JPEG"
-                )
-                white, black = white_black_ratio(Image.open(buffer), mask)
+                # no crops are saved for them, the statistics use the same
+                # (lossless) crops as for the failed regions
+                crop = crop_polygon(page_image.get(), parse_points(points))
+                white, black = white_black_ratio(crop, mask)
                 unfailed_rows.append(
                     {
                         "image": image_dir.name,
