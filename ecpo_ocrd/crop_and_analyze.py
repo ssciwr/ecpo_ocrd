@@ -44,7 +44,9 @@ flags:
 * the repeated unit and how many times it repeats in a row, and
 * the OCR text
 
-<output_folder>/failed_regions_stats_<settings>.png shows the statistics.
+<output_folder>/failed_regions_stats_<settings>.png shows the statistics. Its
+last panel shows the repetition penalty of the unfailed regions, read from the
+comments vlm_ocr.py writes to the PAGE-XML.
 <settings> holds the options the results depend on, e.g.
 "minsize10_white095_black095_repeat50",
 so that runs with different options don't overwrite each other.
@@ -64,9 +66,13 @@ import click
 from PIL import Image, ImageDraw
 
 try:
-    from ecpo_ocrd.repetition import MIN_REPEAT_TIMES, most_repeat
+    from ecpo_ocrd.repetition import (
+        MIN_REPEAT_TIMES,
+        most_repeat,
+        repetition_penalties,
+    )
 except ImportError:  # run as a script without the package installed
-    from repetition import MIN_REPEAT_TIMES, most_repeat
+    from repetition import MIN_REPEAT_TIMES, most_repeat, repetition_penalties
 
 BASE_LINK = "https://ecpo.cats.uni-heidelberg.de/fcgi-bin/iipsrv.fcgi?IIIF=/ecpo/images/{}/full/full/0/default.jpg"
 FAILED_PREFIX = "[OCR failed"
@@ -75,6 +81,9 @@ SKIPPED_PREFIX = "[OCR skipped"
 SKIPPED_SOURCE = "Skipped: one edge too small"
 # written by vlm_ocr.py when the request to the VLM fails with an HTTP status
 REQUEST_ERROR_RE = re.compile(r"\[OCR failed: request error (\d+)\]")
+# written by vlm_ocr.py to TextEquiv/@comments (see region_comments there)
+REPETITION_PENALTY_RE = re.compile(r"repetition_penalty=([\d.]+)")
+STILL_REPEATS = "still repeats"
 
 # grey levels (0-255) from which a pixel counts as white or black;
 # paper in the scans is ~235-255, printed ink only ~130-150
@@ -191,6 +200,12 @@ def request_status(text: str) -> str:
     return match.group(1) if match else ""
 
 
+def comment_penalty(comments: str) -> float | None:
+    """Repetition penalty in the comments of a region, None if there is none."""
+    match = REPETITION_PENALTY_RE.search(comments)
+    return float(match.group(1)) if match else None
+
+
 def image_url(image_filename: str) -> str:
     """Build the IIIF URL from the part of imageFilename starting at "jingbao"."""
     start = image_filename.find("jingbao/")
@@ -301,10 +316,11 @@ def process_xml(
     min_repeat_times: int,
     image_folder: Path = None,
     show_unfailed_regions: bool = False,
-) -> tuple[list[dict], list[dict]]:
-    """Return the rows of the failed or skipped regions and, if
-    show_unfailed_regions is set, the flags of the unfailed regions (regions
-    with text that did not fail)."""
+) -> tuple[list[dict], list[dict], list[str]]:
+    """Return the rows of the failed or skipped regions, if
+    show_unfailed_regions is set the flags of the unfailed regions (regions
+    with text that did not fail), and the comments of the unfailed regions ("" if
+    they have none)."""
     root = ET.parse(xml_path).getroot()
     ns = root.tag.split("}")[0] + "}"
     page = root.find(f"{ns}Page")
@@ -319,6 +335,11 @@ def process_xml(
     all_regions = region_texts(page)
     regions = [r for r in all_regions if is_failed(r[2], min_repeat_times)]
     ocr_comments = region_ocr_comments(page)
+    unfailed_comments = [
+        ocr_comments.get(region_id, "")
+        for region_id, _, text in all_regions
+        if text and not is_failed(text, min_repeat_times)
+    ]
     rows = []
     unfailed_rows = []
     n_cropped = 0
@@ -392,7 +413,7 @@ def process_xml(
         f"{xml_path.name}: {len(regions)} failed regions{skipped}, "
         f"{n_cropped} newly cropped -> {image_dir}"
     )
-    return rows, unfailed_rows
+    return rows, unfailed_rows, unfailed_comments
 
 
 def category(row: dict) -> str:
@@ -434,11 +455,13 @@ def plot_stats(
     path: Path,
     unfailed_rows: list[dict] = None,
     total_number_images: int = 0,
+    unfailed_comments: list[str] = None,
 ) -> bool:
     """Plot the statistics, return False if matplotlib is not installed.
 
     With unfailed_rows, a last line shows how the unfailed regions are
-    flagged, i.e. which of them a filter on the flags would skip.
+    flagged, i.e. which of them a filter on the flags would skip. With
+    unfailed_comments, the last panel shows their repetition penalties.
     """
     try:
         import matplotlib
@@ -498,6 +521,10 @@ def plot_stats(
     if unfailed_rows:
         # last line: the unfailed regions
         layout.append(["unfailed_category"] * 3 + ["unfailed_flags"] * 3)
+        height_ratios.append(1)
+    if unfailed_comments:
+        # last line: the repetition penalties of the unfailed regions
+        layout.append(["repetition"] * 6)
         height_ratios.append(1)
     # "constrained" makes room for titles, legends and the suptitle. Each line
     # is its own subfigure, because the lines split their width differently:
@@ -738,6 +765,60 @@ def plot_stats(
         flag_bars(axes["unfailed_flags"], unfailed_rows, "Unfailed regions")
         title += f", {len(unfailed_rows):,} unfailed regions, total {total_number_images:,} images"
 
+    # 9) which repetition penalty did the unfailed regions end up with?
+    if unfailed_comments:
+        ax = axes["repetition"]
+        counts = Counter(
+            (comment_penalty(comments), STILL_REPEATS in comments)
+            for comments in unfailed_comments
+        )
+        # the failed regions too: the highest penalty may only have failed regions
+        all_comments = unfailed_comments + [row["ocr_comments"] for row in rows]
+        used = {comment_penalty(comments) for comments in all_comments} - {None}
+        penalties = sorted(
+            used | {p for p in repetition_penalties(max(used, default=1.0)) if p > 1.0}
+        )
+        labels = ["No repetition comment"]
+        values = [counts[None, False]]
+        for penalty in penalties:
+            still_repeats = counts[penalty, True]
+            # the XML does not hold max_repetition_penalty, take the highest one used
+            if penalty == penalties[-1] or still_repeats:
+                labels += [
+                    f"Penalty {penalty:g}: stopped repeating",
+                    f"Penalty {penalty:g}: {STILL_REPEATS}",
+                ]
+                values += [counts[penalty, False], still_repeats]
+            else:
+                labels.append(f"Penalty {penalty:g}")
+                values.append(counts[penalty, False])
+        bars = ax.barh(labels[::-1], values[::-1], color=color, height=0.6)
+        ax.bar_label(
+            bars,
+            labels=[
+                f"{v:,} ({100 * v / len(unfailed_comments):.2f}%)" for v in values[::-1]
+            ],
+            padding=4,
+            color=ink,
+        )
+        # log scale: most regions have no repetition, the retried ones would not
+        # be visible next to them; symlog because some counts can be 0
+        ax.set_xscale("symlog", linthresh=1)
+        ax.set_xlim(0, max(values) * 10)
+        ax.xaxis.set_major_formatter(lambda v, _: f"{v:,.0f}")
+        ax.grid(axis="y", visible=False)
+        ax.grid(axis="x", color=grid, linewidth=0.8)
+        n_failed_repeats = sum(STILL_REPEATS in row["ocr_comments"] for row in rows)
+        ax.set_title(
+            "Unfailed regions by repetition penalty of the last OCR request\n"
+            f'("{STILL_REPEATS}" here: cut off at max_tokens without enough repeats '
+            f"to count as failed; {n_failed_repeats:,} more regions still repeat "
+            "and are counted as failed, not shown)",
+            loc="left",
+            fontsize=11,
+        )
+        ax.set_xlabel("Unfailed regions (log scale)")
+
     fig.suptitle(title, x=0.01, ha="left", fontsize=13)
     # extra room between the rows (in inches), so that the two-line titles
     # don't come too close to the axis labels above them
@@ -855,12 +936,17 @@ def cli(
     rows = [
         row
         for xml_path in xml_files
-        for row in rows_per_file.get(xml_path, ([], []))[0]
+        for row in rows_per_file.get(xml_path, ([], [], []))[0]
     ]
     unfailed_rows = [
         row
         for xml_path in xml_files
-        for row in rows_per_file.get(xml_path, ([], []))[1]
+        for row in rows_per_file.get(xml_path, ([], [], []))[1]
+    ]
+    unfailed_comments = [
+        comments
+        for xml_path in xml_files
+        for comments in rows_per_file.get(xml_path, ([], [], []))[2]
     ]
 
     suffix = settings_suffix(
@@ -888,6 +974,7 @@ def cli(
         plot_path,
         unfailed_rows,
         len(xml_files),
+        unfailed_comments,
     ):
         click.echo(f"Saved statistics plot to {plot_path}")
 
