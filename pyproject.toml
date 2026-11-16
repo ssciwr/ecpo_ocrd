@@ -73,5 +73,6 @@ metadata.version.regex = '"version":\s*"(?P<value>[^"]+)"'
 [tool.setuptools]
 packages = [
     "ecpo_ocrd",
+    "ecpo_ocrd.analysis",
 ]
 package-data = {"*" = ["ocrd-tool.json", "replacements.txt"]}

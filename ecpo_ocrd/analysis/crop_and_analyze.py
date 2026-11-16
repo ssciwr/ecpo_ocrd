@@ -8,7 +8,7 @@ They are analysed like the failed regions, as their own source; without
 min_edge there are simply no skipped regions.
 
 Usage:
-    python ecpo_ocrd/crop_and_analyze.py <xml_folder> <output_folder>
+    python ecpo_ocrd/analysis/crop_and_analyze.py <xml_folder> <output_folder>
         [--min-size 10]
         [--white-threshold 0.95]
         [--black-threshold 0.95]
@@ -55,6 +55,7 @@ so that runs with different options don't overwrite each other.
 import csv
 import os
 import re
+import sys
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -72,7 +73,9 @@ try:
         repetition_penalties,
     )
 except ImportError:  # run as a script without the package installed
-    from repetition import MIN_REPEAT_TIMES, most_repeat, repetition_penalties
+    # the modules of the pipeline are in the parent folder
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from repetition import MIN_REPEAT_TIMES, most_repeat
 
 BASE_LINK = "https://ecpo.cats.uni-heidelberg.de/fcgi-bin/iipsrv.fcgi?IIIF=/ecpo/images/{}/full/full/0/default.jpg"
 FAILED_PREFIX = "[OCR failed"

@@ -65,7 +65,7 @@ def region_comments(
     at penalty 1.1, "repetition_penalty=1.2; still repeats" if it repeats
     itself even at the maximum penalty, and "reading_order=default" if the
     model did not answer with one of the allowed reading orders, so the OCR
-    prompt got DEFAULT_READING_ORDER. crop_and_analyze.py reads these comments.
+    prompt got DEFAULT_READING_ORDER. analysis/crop_and_analyze.py reads these comments.
     """
     comments = []
     # retried: sent with a higher penalty than the first request, or still

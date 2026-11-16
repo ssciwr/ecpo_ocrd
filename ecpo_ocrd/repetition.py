@@ -2,8 +2,8 @@
 penalties to retry them with.
 
 Shared by vlm_ocr.py (retries with a higher repetition penalty),
-make_vllm_request.py (the same, for single crops) and crop_and_analyze.py
-(counts the regions that still repeat).
+analysis/make_vllm_request.py (the same, for single crops) and
+analysis/crop_and_analyze.py (counts the regions that still repeat).
 """
 
 import re

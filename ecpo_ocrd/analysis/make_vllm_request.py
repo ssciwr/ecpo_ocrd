@@ -21,7 +21,7 @@ and the file names of requests and responses get .x<factor> too, so they do not
 overwrite the results without upscaling.
 
 Usage:
-    python ecpo_ocrd/make_vllm_request.py <image_path>
+    python ecpo_ocrd/analysis/make_vllm_request.py <image_path>
         [--server http://localhost:9080/v1]
         [--model Qwen/Qwen3-VL-32B-Instruct]
         [--reading-order "top to bottom, right-to-left"]
@@ -32,6 +32,7 @@ Usage:
 import base64
 import json
 import subprocess
+import sys
 from io import BytesIO
 from pathlib import Path
 
@@ -42,6 +43,8 @@ try:
     from ecpo_ocrd.reading_order import DEFAULT_READING_ORDER, parse_reading_order
     from ecpo_ocrd.repetition import is_repetition, repetition_penalties
 except ImportError:  # run as a script without the package installed
+    # the modules of the pipeline are in the parent folder
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from reading_order import DEFAULT_READING_ORDER, parse_reading_order
     from repetition import is_repetition, repetition_penalties
 

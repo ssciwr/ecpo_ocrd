@@ -1,6 +1,6 @@
 """Check the VLM's answer to the reading order prompt.
 
-Shared by vlm_ocr.py and make_vllm_request.py. The reading order prompt
+Shared by vlm_ocr.py and analysis/make_vllm_request.py. The reading order prompt
 allows exactly one of READING_ORDERS as answer. Anything else (e.g. an
 explanation, a made-up option, or an answer stuck repeating itself) is
 replaced by DEFAULT_READING_ORDER, so that the OCR prompt always gets a valid
